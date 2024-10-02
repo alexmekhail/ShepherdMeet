@@ -1,0 +1,39 @@
+.login-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    text-align: center;
+    background-color: #f9f9f9;
+  }
+  
+  .logo {
+    width: 150px; /* Adjust the size of your logo */
+    margin-bottom: 20px;
+  }
+  
+  .gsi-material-button {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .gsi-material-button:hover {
+    background-color: #f1f1f1;
+  }
+  
+  .gsi-material-button-content-wrapper {
+    display: flex;
+    align-items: center;
+  }
+  
+  .gsi-material-button-icon {
+    margin-right: 10px;
+  }
+  

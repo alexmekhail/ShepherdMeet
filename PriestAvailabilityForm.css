@@ -1,0 +1,173 @@
+
+/* Global Minimalistic Styling */
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f9f9f9;
+  color: #333;
+  margin: 0;
+  padding: 0;
+}
+
+/* Calendar Container */
+.boujee-container {
+  max-width: 900px;
+  margin: 50px auto;
+  padding: 40px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  color: #333;
+  font-size: 16px;
+}
+
+h2 {
+  text-align: center;
+  font-size: 28px;
+  color: #333;
+  margin-bottom: 30px;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.month-nav {
+  background-color: transparent;
+  border: none;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 22px;
+  cursor: pointer;
+  color: #007bff;
+  transition: color 0.2s ease-in-out;
+}
+
+.month-nav:hover {
+  color: #0056b3;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.calendar-day {
+  background-color: #f0f0f0;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  font-size: 18px;
+  border: 1px solid transparent;
+}
+
+.calendar-day:hover {
+  background-color: #007bff;
+  color: #ffffff;
+}
+
+.selected {
+  background-color: #28a745;
+  color: #ffffff;
+  border-color: #28a745;
+}
+
+.available {
+  background-color: #e6f4ea;
+  color: #28a745;
+}
+
+.unavailable {
+  background-color: #f0f0f0;
+  color: #a0a0a0;
+}
+
+.availability-details {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #f9f9f9;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+}
+
+.availability-details h3 {
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 18px;
+}
+
+.edit-availability {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.edit-availability h3 {
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 18px;
+}
+
+.edit-availability form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.edit-availability label {
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+.edit-availability input[type="date"], 
+.edit-availability input[type="time"], 
+.edit-availability input[type="checkbox"] {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.2s ease-in-out;
+}
+
+.edit-availability input:focus {
+  border-color: #007bff;
+}
+
+.edit-availability button {
+  background-color: #007bff;
+  color: #fff;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.3s ease;
+}
+
+.edit-availability button:hover {
+  background-color: #0056b3;
+}
+
+.checkbox-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.checkbox-group div {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-group input[type="checkbox"] {
+  margin-right: 5px;
+}

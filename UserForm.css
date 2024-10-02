@@ -1,0 +1,149 @@
+/* Global Minimalistic Styling */
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: #f9f9f9;
+    color: #333;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Main Container */
+  .boujee-container {
+    max-width: 900px;
+    margin: 50px auto;
+    padding: 40px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    color: #333;
+    font-size: 16px;
+  }
+  
+  h2 {
+    text-align: center;
+    font-size: 28px;
+    color: #333;
+    margin-bottom: 30px;
+  }
+  
+  /* Calendar Header */
+  .calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  
+  .month-nav {
+    background-color: transparent;
+    border: none;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 22px;
+    cursor: pointer;
+    color: #007bff;
+    transition: color 0.2s ease-in-out;
+  }
+  
+  .month-nav:hover {
+    color: #0056b3;
+  }
+  
+  /* Weekday Grid */
+  .weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+  
+  .weekday {
+    padding: 10px 0;
+    font-size: 18px;
+    color: #555;
+  }
+  
+  /* Calendar Grid */
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  
+  .calendar-day {
+    background-color: #f0f0f0;
+    padding: 12px;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    font-size: 18px;
+    border: 1px solid transparent;
+  }
+  
+  .calendar-day:hover {
+    background-color: #007bff;
+    color: #ffffff;
+  }
+  
+  .selected {
+    background-color: #28a745;
+    color: #ffffff;
+    border-color: #28a745;
+  }
+  
+  .available {
+    background-color: #e6f4ea;
+    color: #28a745;
+  }
+  
+  .unavailable {
+    background-color: #f0f0f0;
+    color: #a0a0a0;
+  }
+  
+  /* Empty days to align the calendar correctly */
+  .empty-day {
+    background-color: transparent;
+    border: none;
+  }
+  
+  /* Time Slots Section */
+  .time-slots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  
+  .time-slot-btn {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .time-slot-btn:hover {
+    background-color: #0056b3;
+  }
+  
+  /* Availability Details Section */
+  .availability-details {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+  }
+  
+  .availability-details h3 {
+    margin-bottom: 20px;
+    color: #333;
+    font-size: 18px;
+  }
+  

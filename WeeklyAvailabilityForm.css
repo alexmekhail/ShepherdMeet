@@ -1,0 +1,136 @@
+.availability-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  max-width: 800px;
+  margin: auto;
+}
+
+.availability-form {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  width: 100%;
+  margin-bottom: 20px; /* Space between sections */
+}
+
+.availability-form h2,
+.specific-days-form h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.day-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px; /* Space between rows */
+}
+
+.day-row label {
+  flex: 1;
+  display: flex;      
+  align-items: center;
+  color: #555;
+}
+
+.day-row input[type="checkbox"] {
+  margin-right: 10px;
+}
+
+.day-row input[type="time"] {
+  flex: 2;
+  margin: 0 5px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  transition: border 0.3s;
+}
+
+.day-row input[type="time"]:disabled {
+  background: #eaeaea;
+}
+
+.day-row input[type="time"]:focus {
+  border-color: #007bff;
+}
+
+.save-button, .submit-date-range {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 15px;
+  cursor: pointer;
+  transition: background 0.3s;
+  margin-top: 10px; /* Space above buttons */
+}
+
+.save-button:hover, .submit-date-range:hover {
+  background-color: #0056b3;
+}
+
+.specific-days-form {
+  width: 100%;
+  background-color: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.date-range-picker {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 20px; /* Space between date picker and other elements */
+}
+
+.date-range-picker label {
+  margin-bottom: 5px;
+  color: #555;
+}
+
+.date-range-picker input[type="date"],
+.date-range-picker input[type="time"] {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-bottom: 10px; /* Space between fields */
+  transition: border 0.3s;
+}
+
+.date-range-picker input[type="date"]:focus,
+.date-range-picker input[type="time"]:focus {
+  border-color: #007bff;
+}
+
+.selected-date-range {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  padding: 10px;
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.selected-date-range h3 {
+  margin-bottom: 10px;
+}
+
+.selected-date-range ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.selected-date-range li {
+  padding: 5px;
+  border-bottom: 1px solid #ccc;
+}
+
+.selected-date-range li:last-child {
+  border-bottom: none; /* Remove border from last item */
+}
