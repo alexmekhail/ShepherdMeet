@@ -1,0 +1,15 @@
+# Environment secrets
+.env
+backend/appsettings.Production.json
+
+# .NET
+backend/bin/
+backend/obj/
+backend/*.db
+
+# Node / React
+frontend/node_modules/
+frontend/build/
+
+# macOS
+.DS_Store

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './PriestAvailabilityForm.css';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
+
 const PriestAvailabilityForm = () => {
   const [availabilities, setAvailabilities] = useState([]);
   const [profile, setProfile] = useState(null);
@@ -18,10 +20,9 @@ const PriestAvailabilityForm = () => {
     isAvailable: false,
   });
 
-  // Fetch availabilities
   const fetchAvailabilities = async () => {
     try {
-      const response = await fetch('http://localhost:5209/priestavailabilities');
+      const response = await fetch(`${API_URL}/priestavailabilities`);
       if (response.ok) {
         const data = await response.json();
         setAvailabilities(data);
@@ -35,10 +36,9 @@ const PriestAvailabilityForm = () => {
     }
   };
 
-  // Fetch profile
   const fetchProfile = async () => {
     try {
-      const response = await fetch('http://localhost:5209/profile');
+      const response = await fetch(`${API_URL}/profile`);
       if (response.ok) {
         const data = await response.json();
         setProfile(data);
@@ -80,9 +80,8 @@ const PriestAvailabilityForm = () => {
   };
 
   const handleAddAvailability = async () => {
-    // API logic to add new availability
     try {
-      const response = await fetch('http://localhost:5209/priestavailabilities', {
+      const response = await fetch(`${API_URL}/priestavailabilities`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -100,9 +99,8 @@ const PriestAvailabilityForm = () => {
   };
 
   const handleUpdateAvailability = async () => {
-    // API logic to update the availability
     try {
-      const response = await fetch(`http://localhost:5209/priestavailabilities/${editingAvailability.id}`, {
+      const response = await fetch(`${API_URL}/priestavailabilities/${editingAvailability.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -133,12 +131,12 @@ const PriestAvailabilityForm = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-  
+
     if (name === 'startDate') {
       setNewAvailability((prev) => ({
         ...prev,
         [name]: value,
-        endDate: prev.endDate === '' || prev.endDate === prev.startDate ? value : prev.endDate, // Update endDate only if it's empty or the same as startDate
+        endDate: prev.endDate === '' || prev.endDate === prev.startDate ? value : prev.endDate,
       }));
     } else {
       setNewAvailability({
@@ -170,17 +168,16 @@ const PriestAvailabilityForm = () => {
   };
 
   const isAvailableDay = (day) => {
-    return availabilities.some(availability => 
+    return availabilities.some(availability =>
       new Date(availability.startDate).getDate() === day && availability.isAvailable
     );
   };
-  
+
   const isUnavailableDay = (day) => {
-    return !availabilities.some(availability => 
+    return !availabilities.some(availability =>
       new Date(availability.startDate).getDate() === day
     );
   };
-  
 
   return (
     <div className="boujee-container">
@@ -204,8 +201,8 @@ const PriestAvailabilityForm = () => {
             {Array.from({ length: daysInMonth(selectedMonth, selectedYear) }, (_, day) => (
               <div
                 key={day + 1}
-                className={`calendar-day ${selectedDay === day + 1 ? 'selected' : ''} 
-                ${isAvailableDay(day + 1) ? 'available' : ''} 
+                className={`calendar-day ${selectedDay === day + 1 ? 'selected' : ''}
+                ${isAvailableDay(day + 1) ? 'available' : ''}
                 ${isUnavailableDay(day + 1) ? 'unavailable' : ''}`}
                 onClick={() => handleDayClick(day + 1)}
               >
@@ -213,7 +210,7 @@ const PriestAvailabilityForm = () => {
               </div>
             ))}
           </div>
-  
+
           {selectedDay && (
             <div className="availability-details">
               <h3>Availability for {selectedDay} {new Date(selectedYear, selectedMonth).toLocaleString('default', { month: 'long' })} {selectedYear}</h3>
@@ -224,29 +221,28 @@ const PriestAvailabilityForm = () => {
                     <li key={availability.id}>
                       <strong>Priest {availability.userID}</strong>:<br />
                       {availability.startTime} - {availability.endTime}<br />
-                      
                     </li>
                   ))}
               </ul>
             </div>
           )}
-  
+
           <div className="edit-availability">
             <h3>Edit Availability for {selectedDay} {new Date(selectedYear, selectedMonth).toLocaleString('default', { month: 'long' })} {selectedYear}</h3>
             <form onSubmit={(e) => { e.preventDefault(); editingAvailability ? handleUpdateAvailability() : handleAddAvailability(); }}>
               <label>Start Date</label>
-              <input 
-                type="date" 
-                name="startDate" 
-                value={newAvailability.startDate || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`} 
-                onChange={handleInputChange} 
+              <input
+                type="date"
+                name="startDate"
+                value={newAvailability.startDate || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`}
+                onChange={handleInputChange}
               />
               <label>End Date</label>
-              <input 
-                type="date" 
-                name="endDate" 
-                value={newAvailability.endDate || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`} 
-                onChange={handleInputChange} 
+              <input
+                type="date"
+                name="endDate"
+                value={newAvailability.endDate || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`}
+                onChange={handleInputChange}
               />
               <label>Start Time</label>
               <input type="time" name="startTime" value={newAvailability.startTime} onChange={handleInputChange} />
@@ -265,8 +261,7 @@ const PriestAvailabilityForm = () => {
         </>
       )}
     </div>
-    
   );
-                  };
+};
 
-  export default PriestAvailabilityForm;
+export default PriestAvailabilityForm;

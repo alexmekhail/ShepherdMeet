@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import './UserForm.css';
 import { useNavigate } from 'react-router-dom';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
+
 const UserForm = () => {
   const [availabilities, setAvailabilities] = useState([]);
   const [profile, setProfile] = useState(null);
@@ -11,10 +13,9 @@ const UserForm = () => {
   const [selectedDay, setSelectedDay] = useState(null);
   const navigate = useNavigate();
 
-  // Fetch availabilities
   const fetchAvailabilities = async () => {
     try {
-      const response = await fetch('http://localhost:5209/priestavailabilities');
+      const response = await fetch(`${API_URL}/priestavailabilities`);
       if (response.ok) {
         const data = await response.json();
         setAvailabilities(data);
@@ -57,14 +58,13 @@ const UserForm = () => {
   };
 
   const formatTime = (timeString) => {
-    if (!timeString) return ''; // Handle empty or undefined time strings
-  
+    if (!timeString) return '';
+
     const [hour, minute] = timeString.split(':');
     const hourInt = parseInt(hour, 10);
-    const hour12 = hourInt % 12 || 12; // Convert 0 to 12 for midnight
+    const hour12 = hourInt % 12 || 12;
     return `${hour12}:${minute}`;
   };
-  
 
   const isAvailableDay = (day) => {
     return availabilities.some((availability) => {
@@ -84,7 +84,6 @@ const UserForm = () => {
     });
   };
 
-  // Get the day of the week for the first day of the month
   const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1).getDay();
 
   return (
@@ -116,7 +115,7 @@ const UserForm = () => {
             {Array.from({ length: daysInMonth(selectedMonth, selectedYear) }, (_, day) => (
               <div
                 key={day + 1}
-                className={`calendar-day ${selectedDay === day + 1 ? 'selected' : ''} 
+                className={`calendar-day ${selectedDay === day + 1 ? 'selected' : ''}
                 ${isAvailableDay(day + 1) ? 'available' : ''}`}
                 onClick={() => handleDayClick(day + 1)}
               >

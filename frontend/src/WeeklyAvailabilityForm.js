@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import './WeeklyAvailabilityForm.css';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
+
 const WeeklyAvailabilityForm = () => {
     const [weeklyHours, setWeeklyHours] = useState({
         sunday: { available: false, startTime: '', endTime: '' },
@@ -58,31 +60,25 @@ const WeeklyAvailabilityForm = () => {
     };
 
     const handleSubmitWeeklyHours = () => {
-        // Get the current date
         const startDate = new Date();
-        
-        // Calculate the date 6 months from now
         const endDate = new Date();
-        endDate.setMonth(startDate.getMonth() + 6);  // Add 6 months
-    
-        // Filter the available days and send individual requests for each day
+        endDate.setMonth(startDate.getMonth() + 6);
+
         Object.keys(weeklyHours).forEach(day => {
             if (weeklyHours[day].available) {
-                // Prepare the data for submission for each available day
                 const availabilityData = {
-                    userID: 1,  // Replace with dynamic userID if needed
-                    startDate: startDate.toISOString(),  // Current date as start date
-                    endDate: endDate.toISOString(),      // Date 6 months from now as end date
-                    days: [day.charAt(0).toUpperCase() + day.slice(1)],  // Single day (e.g., ["Monday"])
-                    startTime: weeklyHours[day].startTime + ':00',  // Start time with seconds
-                    endTime: weeklyHours[day].endTime + ':00',      // End time with seconds
-                    isAvailable: true,  // Availability status
+                    userID: 1,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString(),
+                    days: [day.charAt(0).toUpperCase() + day.slice(1)],
+                    startTime: weeklyHours[day].startTime + ':00',
+                    endTime: weeklyHours[day].endTime + ':00',
+                    isAvailable: true,
                 };
-    
-                console.log('Submitting for:', availabilityData);  // Log the data for debugging
-    
-                // Send the data to the server for each day
-                fetch('http://localhost:5209/priestavailabilities', {
+
+                console.log('Submitting for:', availabilityData);
+
+                fetch(`${API_URL}/priestavailabilities`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -104,8 +100,6 @@ const WeeklyAvailabilityForm = () => {
             }
         });
     };
-    
-    
 
     const handleSubmitSpecificDaysOff = () => {
         const specificDaysData = specificDaysOff.map(range => ({
@@ -119,9 +113,9 @@ const WeeklyAvailabilityForm = () => {
         }));
 
         specificDaysData.forEach(data => {
-            console.log('Specific Day Off Data:', data); // Log for debugging
+            console.log('Specific Day Off Data:', data);
 
-            fetch('http://localhost:5209/priestavailabilities', {
+            fetch(`${API_URL}/priestavailabilities`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

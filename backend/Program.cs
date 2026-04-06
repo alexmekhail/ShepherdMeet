@@ -8,13 +8,16 @@ using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var allowedOrigins = builder.Configuration["AllowedOrigins"]?.Split(',', StringSplitOptions.TrimEntries)
+    ?? new[] { "http://localhost:3000" };
+
 // Add services to the container.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowSpecificOrigin",
         builder =>
         {
-            builder.WithOrigins("http://localhost:3000") // Replace with your frontend URL
+            builder.WithOrigins(allowedOrigins)
                    .AllowAnyHeader()
                    .AllowAnyMethod()
                    .AllowCredentials();
@@ -23,28 +26,39 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddAuthentication(options =>
+var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
+var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+var googleConfigured = !string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret);
+
+var authBuilder = builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
+    if (googleConfigured)
+        options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
 })
 .AddCookie(options =>
 {
-    options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax; 
-})
-.AddGoogle(options =>
-{
-    options.ClientId = builder.Configuration["Authentication:Google:ClientId"];
-    options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
-    options.CallbackPath = "/signin-google"; 
-    options.Scope.Add("email");
-    options.Scope.Add("profile");
+    options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
 });
+
+if (googleConfigured)
+{
+    authBuilder.AddGoogle(options =>
+    {
+        options.ClientId = googleClientId!;
+        options.ClientSecret = googleClientSecret!;
+        options.CallbackPath = "/signin-google";
+        options.Scope.Add("email");
+        options.Scope.Add("profile");
+    });
+}
 
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+var frontendUrl = app.Configuration["FrontendUrl"] ?? "http://localhost:3000";
 
 // Configure the HTTP request pipeline.
 app.UseCors("AllowSpecificOrigin");
@@ -75,7 +89,7 @@ app.MapPost("/priestavailabilities", async (PriestAvailabilityInput availability
     {
         // Parse the day to get the corresponding DayOfWeek enum value
         var dayOfWeek = (DayOfWeek)Enum.Parse(typeof(DayOfWeek), day);
-        
+
         // Check if the day falls between StartDate and EndDate
         var matchingDate = GetDateForDayOfWeekInRange(availability.StartDate, availability.EndDate, dayOfWeek);
 
@@ -149,7 +163,7 @@ DateTime? GetDateForDayOfWeekInRange(DateTime startDate, DateTime endDate, DayOf
     {
         return targetDate;
     }
-    
+
     // Return null if the day does not fall within the range
     return null;
 }
@@ -226,8 +240,8 @@ app.MapGet("/post-login", async (HttpContext context, AppDbContext db) =>
             var user = await db.Users.FirstOrDefaultAsync(u => u.Email == emailClaim);
             if (user != null)
             {
-                // User exists, redirect to profile
-                return Results.Redirect("http://localhost:3000/");
+                // User exists, redirect to frontend
+                return Results.Redirect(frontendUrl + "/");
             }
             else
             {

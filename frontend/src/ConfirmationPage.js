@@ -1,7 +1,8 @@
-// ConfirmationPage.js
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './ConfirmationPage.css';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
 const ConfirmationPage = () => {
   const location = useLocation();
@@ -10,16 +11,15 @@ const ConfirmationPage = () => {
   const meetingDate = new Date(date);
 
   const formattedDate = meetingDate.toLocaleDateString('en-US', {
-    weekday: 'long',  // Day of the week (e.g., Monday)
-    year: 'numeric',  // Full year (e.g., 2023)
-    month: 'long',    // Full month name (e.g., September)
-    day: 'numeric',   // Day of the month (e.g., 26)
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
   });
 
   const handleConfirm = async () => {
-    // Send confirmation to the backend (this is just a placeholder)
     try {
-      const response = await fetch('http://localhost:5209/appointments', {
+      const response = await fetch(`${API_URL}/appointments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -34,7 +34,7 @@ const ConfirmationPage = () => {
 
       if (response.ok) {
         alert('Appointment confirmed!');
-        navigate('/'); // Redirect to home after confirmation
+        navigate('/');
       } else {
         alert('Appointment confirmed!');
       }
