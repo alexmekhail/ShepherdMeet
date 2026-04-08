@@ -68,11 +68,16 @@ using (var scope = app.Services.CreateScope())
 
 var frontendUrl = app.Configuration["FrontendUrl"] ?? "http://localhost:3000";
 
-// Trust the HTTPS reverse proxy in Azure Container Apps
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+// Trust the HTTPS reverse proxy in Azure Container Apps.
+// KnownNetworks/KnownProxies must be cleared so ASP.NET accepts
+// X-Forwarded-Proto from Azure's dynamic proxy IPs.
+var forwardedOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
+};
+forwardedOptions.KnownNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
 
 // Configure the HTTP request pipeline.
 app.UseCors("AllowSpecificOrigin");
