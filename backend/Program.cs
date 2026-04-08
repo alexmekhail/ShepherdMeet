@@ -58,6 +58,13 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+// Auto-apply migrations on startup (creates the DB if it doesn't exist)
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 var frontendUrl = app.Configuration["FrontendUrl"] ?? "http://localhost:3000";
 
 // Configure the HTTP request pipeline.

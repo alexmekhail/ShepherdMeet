@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>MinimalApiProject</RootNamespace>
     <AssemblyName>ShepherdMeet</AssemblyName>
+    <UserSecretsId>shepherdmeet-dev</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
