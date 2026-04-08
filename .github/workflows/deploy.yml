@@ -58,20 +58,24 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Deploy backend to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          acrName: ${{ secrets.ACR_NAME }}
-          containerAppName: shepherdmeet-backend
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          imageToDeploy: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
-          environmentVariables: |
-            Authentication__Google__ClientId=${{ secrets.GOOGLE_CLIENT_ID }}
-            Authentication__Google__ClientSecret=${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          az containerapp update \
+            --name shepherdmeet-backend \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+            --registry-server ${{ env.REGISTRY }} \
+            --registry-username ${{ secrets.ACR_USERNAME }} \
+            --registry-password ${{ secrets.ACR_PASSWORD }} \
+            --set-env-vars \
+              "Authentication__Google__ClientId=${{ secrets.GOOGLE_CLIENT_ID }}" \
+              "Authentication__Google__ClientSecret=${{ secrets.GOOGLE_CLIENT_SECRET }}"
 
       - name: Deploy frontend to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          acrName: ${{ secrets.ACR_NAME }}
-          containerAppName: shepherdmeet-frontend
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          imageToDeploy: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+        run: |
+          az containerapp update \
+            --name shepherdmeet-frontend \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
+            --registry-server ${{ env.REGISTRY }} \
+            --registry-username ${{ secrets.ACR_USERNAME }} \
+            --registry-password ${{ secrets.ACR_PASSWORD }}
