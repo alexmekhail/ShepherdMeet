@@ -9,6 +9,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,7 +18,13 @@ const App = () => {
         const response = await fetch(`${API_URL}/profile`, {
           credentials: 'include',
         });
-        setIsAuthenticated(response.ok);
+        if (response.ok) {
+          const data = await response.json();
+          setProfile(data);
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+        }
       } catch {
         setIsAuthenticated(false);
       } finally {
@@ -35,10 +42,11 @@ const App = () => {
     return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
 
+  const isAdmin = profile?.email?.toLowerCase() === 'alexmekhail10@gmail.com';
+
   return (
     <Routes>
-      <Route path="/" element={<PriestAvailabilityForm />} />
-      <Route path="/schedule" element={<UserForm />} />
+      <Route path="/" element={isAdmin ? <PriestAvailabilityForm /> : <UserForm />} />
       <Route path="/confirmation" element={<ConfirmationPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
