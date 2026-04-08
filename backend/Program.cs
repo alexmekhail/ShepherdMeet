@@ -274,24 +274,7 @@ app.MapGet("/post-login", async (HttpContext context, AppDbContext db) =>
                 db.Users.Add(newUser);
                 await db.SaveChangesAsync();
 
-                var htmlContent = $@"
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Account Created</title>
-                </head>
-                <body>
-                    <h1>Account Created</h1>
-                    <p>An account for {nameClaim} has been created.</p>
-                    <script>
-                        setTimeout(function() {{
-                            window.location.href = '/profile';
-                        }}, 3000);
-                    </script>
-                </body>
-                </html>";
-
-                return Results.Content(htmlContent, "text/html");
+                return Results.Redirect(frontendUrl + "/");
             }
         }
     }
