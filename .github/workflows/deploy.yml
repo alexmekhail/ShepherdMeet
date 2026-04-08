@@ -57,15 +57,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Configure ACR credentials on Container Apps
+        run: |
+          az containerapp registry set \
+            --name shepherdmeet-backend \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ env.REGISTRY }} \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password ${{ secrets.ACR_PASSWORD }}
+          az containerapp registry set \
+            --name shepherdmeet-frontend \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ env.REGISTRY }} \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password ${{ secrets.ACR_PASSWORD }}
+
       - name: Deploy backend to Azure Container Apps
         run: |
           az containerapp update \
             --name shepherdmeet-backend \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
-            --registry-server ${{ env.REGISTRY }} \
-            --registry-username ${{ secrets.ACR_USERNAME }} \
-            --registry-password ${{ secrets.ACR_PASSWORD }} \
             --set-env-vars \
               "Authentication__Google__ClientId=${{ secrets.GOOGLE_CLIENT_ID }}" \
               "Authentication__Google__ClientSecret=${{ secrets.GOOGLE_CLIENT_SECRET }}"
@@ -75,7 +87,4 @@ jobs:
           az containerapp update \
             --name shepherdmeet-frontend \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
-            --registry-server ${{ env.REGISTRY }} \
-            --registry-username ${{ secrets.ACR_USERNAME }} \
-            --registry-password ${{ secrets.ACR_PASSWORD }}
+            --image ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
