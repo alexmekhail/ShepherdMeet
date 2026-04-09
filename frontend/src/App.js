@@ -46,7 +46,7 @@ const App = () => {
 
   return (
     <Routes>
-      <Route path="/" element={isAdmin ? <PriestAvailabilityForm /> : <UserForm />} />
+      <Route path="/" element={isAdmin ? <PriestAvailabilityForm /> : <UserForm profile={profile} />} />
       <Route path="/confirmation" element={<ConfirmationPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
-const UserForm = () => {
+const UserForm = ({ profile }) => {
   const [availabilities, setAvailabilities] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -82,7 +82,7 @@ const UserForm = () => {
   const handleTimeSlotClick = (availability) => {
     navigate('/confirmation', {
       state: {
-        name: 'Alex Mekhail',
+        name: `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim(),
         location: 'St. Philopater & St. Demiana Coptic Orthodox Church',
         date: `${selectedYear}-${selectedMonth + 1}-${selectedDay}`,
         time: `${formatTime(availability.startTime)} - ${formatTime(availability.endTime)}`,
