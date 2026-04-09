@@ -79,11 +79,14 @@ const UserForm = ({ profile }) => {
   };
 
   const handleTimeSlotClick = (availability) => {
+    const mm = String(selectedMonth + 1).padStart(2, '0');
+    const dd = String(selectedDay).padStart(2, '0');
     navigate('/confirmation', {
       state: {
+        availabilityId: availability.id,
         name: `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim(),
         location: 'St. Philopater & St. Demiana Coptic Orthodox Church',
-        date: `${selectedYear}-${selectedMonth + 1}-${selectedDay}`,
+        date: `${selectedYear}-${mm}-${dd}`,
         time: `${formatTime(availability.startTime)} - ${formatTime(availability.endTime)}`,
       },
     });

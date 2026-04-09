@@ -14,13 +14,14 @@ const formatDate = (dateStr) => {
   });
 };
 
-const Sidebar = ({ profile, onSignOut }) => {
+const Sidebar = ({ profile, onSignOut, appointmentVersion = 0 }) => {
   const [appointments, setAppointments] = useState([]);
   const [loadingAppts, setLoadingAppts] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     const fetchAppointments = async () => {
+      setLoadingAppts(true);
       try {
         const res = await fetch(`${API_URL}/appointments`, { credentials: 'include' });
         if (res.ok) {
@@ -34,7 +35,7 @@ const Sidebar = ({ profile, onSignOut }) => {
       }
     };
     fetchAppointments();
-  }, []);
+  }, [appointmentVersion]); // re-fetch whenever a new appointment is booked
 
   const todayStr = new Date().toISOString().split('T')[0];
   const upcoming = appointments.filter((a) => a.date >= todayStr);

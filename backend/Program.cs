@@ -90,12 +90,13 @@ app.MapGet("/priestavailabilities", async (AppDbContext db) => {
     // Format the response to include formatted times
     var formattedAvailabilityList = availabilityList.Select(availability => new
     {
+        id = availability.ID,
         availability.UserID,
         startDate = availability.StartDate.ToString("yyyy-MM-dd"),
         endDate = availability.EndDate.ToString("yyyy-MM-dd"),
         Days = availability.Days,
-        startTime = availability.StartDate.ToString("hh:mm tt"),
-        endTime = availability.EndDate.ToString("hh:mm tt"),
+        startTime = availability.StartDate.ToString("HH:mm"),
+        endTime = availability.EndDate.ToString("HH:mm"),
         availability.IsAvailable
     }).ToList();
 
@@ -189,6 +190,14 @@ DateTime? GetDateForDayOfWeekInRange(DateTime startDate, DateTime endDate, DayOf
 
 app.MapDelete("/priestavailabilities", async (AppDbContext db) => {
     db.PriestAvailabilities.RemoveRange(db.PriestAvailabilities);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+});
+
+app.MapDelete("/priestavailabilities/{id:int}", async (int id, AppDbContext db) => {
+    var slot = await db.PriestAvailabilities.FindAsync(id);
+    if (slot == null) return Results.NotFound();
+    db.PriestAvailabilities.Remove(slot);
     await db.SaveChangesAsync();
     return Results.NoContent();
 });

@@ -1,46 +1,65 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './ConfirmationPage.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
-const ConfirmationPage = () => {
+// Parse "yyyy-MM-dd" without timezone shifting
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const ConfirmationPage = ({ onBooked }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { name, location: meetingLocation, date, time } = location.state || {};
-  const meetingDate = new Date(date);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState(null);
 
-  const formattedDate = meetingDate.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const { availabilityId, name, location: meetingLocation, date, time } = location.state || {};
+
+  const meetingDate = parseDate(date);
+  const formattedDate = meetingDate
+    ? meetingDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : date;
 
   const handleConfirm = async () => {
+    setConfirming(true);
+    setError(null);
     try {
-      const response = await fetch(`${API_URL}/appointments`, {
+      // Save the appointment
+      const apptRes = await fetch(`${API_URL}/appointments`, {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name,
-          location: meetingLocation,
-          date,
-          time,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, location: meetingLocation, date, time }),
       });
 
-      if (response.ok) {
-        alert('Appointment confirmed!');
-        navigate('/');
-      } else {
-        alert('Appointment confirmed!');
+      if (!apptRes.ok) {
+        throw new Error('Failed to save appointment.');
       }
-    } catch (error) {
-      console.error('Error confirming appointment:', error);
+
+      // Remove the slot from availability so it can't be double-booked
+      if (availabilityId) {
+        await fetch(`${API_URL}/priestavailabilities/${availabilityId}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+      }
+
+      onBooked?.();
+      navigate('/confirmed', { state: { name, date: formattedDate, time }, replace: true });
+    } catch (e) {
+      console.error(e);
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -53,7 +72,13 @@ const ConfirmationPage = () => {
         <p><strong>Date:</strong> {formattedDate}</p>
         <p><strong>Time:</strong> {time}</p>
       </div>
-      <button className="confirm-btn" onClick={handleConfirm}>Confirm Appointment</button>
+      {error && <p className="confirm-error">{error}</p>}
+      <button className="confirm-btn" onClick={handleConfirm} disabled={confirming}>
+        {confirming ? 'Confirming…' : 'Confirm Appointment'}
+      </button>
+      <button className="cancel-btn" onClick={() => navigate('/')} disabled={confirming}>
+        Cancel
+      </button>
     </div>
   );
 };
