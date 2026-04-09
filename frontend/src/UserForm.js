@@ -66,10 +66,16 @@ const UserForm = () => {
     return `${hour12}:${minute}`;
   };
 
+  // Parse date parts directly from "yyyy-MM-dd" string to avoid timezone shifts
+  const parseDate = (dateStr) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return { year, month: month - 1, day }; // month is 0-indexed
+  };
+
   const isAvailableDay = (day) => {
     return availabilities.some((availability) => {
-      const availabilityDate = new Date(availability.startDate);
-      return availabilityDate.getUTCDate() === day;
+      const { year, month, day: aDay } = parseDate(availability.startDate);
+      return aDay === day && month === selectedMonth && year === selectedYear;
     });
   };
 
@@ -133,7 +139,10 @@ const UserForm = () => {
               </h3>
               <div className="time-slots">
                 {availabilities
-                  .filter((availability) => new Date(availability.startDate).getDate() === selectedDay)
+                  .filter((availability) => {
+                    const { year, month, day } = parseDate(availability.startDate);
+                    return day === selectedDay && month === selectedMonth && year === selectedYear;
+                  })
                   .map((availability) => (
                     <button
                       key={availability.id}
