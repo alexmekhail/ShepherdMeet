@@ -6,7 +6,6 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
 const UserForm = ({ profile }) => {
   const [availabilities, setAvailabilities] = useState([]);
-  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());

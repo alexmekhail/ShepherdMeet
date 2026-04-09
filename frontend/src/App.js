@@ -4,6 +4,7 @@ import PriestAvailabilityForm from './PriestAvailabilityForm';
 import UserForm from './UserForm';
 import ConfirmationPage from './ConfirmationPage';
 import Login from './login';
+import Sidebar from './Sidebar';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
@@ -34,8 +35,17 @@ const App = () => {
     checkAuth();
   }, []);
 
+  const handleSignOut = () => {
+    setIsAuthenticated(false);
+    setProfile(null);
+  };
+
   if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20%', fontSize: '1.2rem' }}>Loading...</div>;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20%', fontSize: '1.2rem' }}>
+        Loading...
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
@@ -45,11 +55,14 @@ const App = () => {
   const isAdmin = profile?.email?.toLowerCase() === 'alexmekhail10@gmail.com';
 
   return (
-    <Routes>
-      <Route path="/" element={isAdmin ? <PriestAvailabilityForm /> : <UserForm profile={profile} />} />
-      <Route path="/confirmation" element={<ConfirmationPage />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Sidebar profile={profile} onSignOut={handleSignOut} />
+      <Routes>
+        <Route path="/" element={isAdmin ? <PriestAvailabilityForm profile={profile} /> : <UserForm profile={profile} />} />
+        <Route path="/confirmation" element={<ConfirmationPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 };
 

@@ -7,6 +7,7 @@ public class AppDbContext : DbContext
     public DbSet<Meeting> Meetings { get; set; }
     public DbSet<PriestAvailabilityInput> PriestAvailabilities { get; set; }
     public DbSet<Location> Locations { get; set; }
+    public DbSet<Appointment> Appointments { get; set; }
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 }

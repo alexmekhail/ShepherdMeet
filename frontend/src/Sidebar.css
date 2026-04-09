@@ -1,0 +1,210 @@
+/* ── Hamburger toggle ───────────────────────────────────────────────────── */
+.sidebar-toggle {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 28px;
+  height: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar-toggle span {
+  display: block;
+  width: 100%;
+  height: 2.5px;
+  background-color: #555;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+}
+
+.sidebar-toggle:hover span {
+  background-color: #007bff;
+}
+
+/* When sidebar is open, tint the toggle bars blue */
+.sidebar-toggle.open span {
+  background-color: #007bff;
+}
+
+/* ── Overlay ────────────────────────────────────────────────────────────── */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 200;
+  backdrop-filter: blur(1px);
+}
+
+/* ── Sidebar panel ──────────────────────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 300px;
+  background: #ffffff;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.1);
+  z-index: 250;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 20px 20px;
+}
+
+.sidebar-avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-user-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #222;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-email {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* ── Divider ────────────────────────────────────────────────────────────── */
+.sidebar-divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 0 16px;
+}
+
+/* ── Sections ───────────────────────────────────────────────────────────── */
+.sidebar-section {
+  padding: 16px 20px;
+}
+
+.sidebar-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #aaa;
+  margin: 0 0 12px;
+}
+
+.sidebar-empty {
+  font-size: 13px;
+  color: #bbb;
+  margin: 0;
+  font-style: italic;
+}
+
+/* ── Appointment items ──────────────────────────────────────────────────── */
+.sidebar-appt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-appt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #f5f9ff;
+  border-left: 3px solid #007bff;
+}
+
+.sidebar-appt-item.past {
+  background: #f7f7f7;
+  border-left-color: #ccc;
+}
+
+.appt-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.sidebar-appt-item.past .appt-date {
+  color: #888;
+}
+
+.appt-time {
+  font-size: 12px;
+  color: #007bff;
+}
+
+.sidebar-appt-item.past .appt-time {
+  color: #aaa;
+}
+
+/* ── Footer / Sign out ──────────────────────────────────────────────────── */
+.sidebar-footer {
+  margin-top: auto;
+  padding: 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.signout-btn {
+  width: 100%;
+  padding: 11px 16px;
+  background: none;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  color: #555;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  font-family: 'Poppins', sans-serif;
+}
+
+.signout-btn:hover {
+  border-color: #dc3545;
+  color: #dc3545;
+  background: #fff5f5;
+}

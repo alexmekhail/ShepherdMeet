@@ -236,6 +236,52 @@ app.MapPost("/priestavailabilities/frontend", async (HttpContext context, AppDbC
 
 app.MapGet("/", () => "Hello World!");
 
+app.MapPost("/appointments", async (HttpContext context, AppDbContext db) =>
+{
+    var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
+    if (string.IsNullOrEmpty(emailClaim)) return Results.Unauthorized();
+
+    var user = await db.Users.SingleOrDefaultAsync(u => u.Email == emailClaim);
+    if (user == null) return Results.NotFound("User not found.");
+
+    var body = await context.Request.ReadFromJsonAsync<AppointmentRequest>();
+    if (body == null) return Results.BadRequest("Invalid appointment data.");
+
+    var appt = new Appointment
+    {
+        UserID = user.ID,
+        Name = body.Name ?? string.Empty,
+        Location = body.Location ?? string.Empty,
+        Date = body.Date ?? string.Empty,
+        Time = body.Time ?? string.Empty,
+    };
+    db.Appointments.Add(appt);
+    await db.SaveChangesAsync();
+    return Results.Created($"/appointments/{appt.ID}", appt);
+});
+
+app.MapGet("/appointments", async (HttpContext context, AppDbContext db) =>
+{
+    var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
+    if (string.IsNullOrEmpty(emailClaim)) return Results.Unauthorized();
+
+    var user = await db.Users.SingleOrDefaultAsync(u => u.Email == emailClaim);
+    if (user == null) return Results.NotFound("User not found.");
+
+    var appointments = await db.Appointments
+        .Where(a => a.UserID == user.ID)
+        .OrderBy(a => a.Date)
+        .ThenBy(a => a.Time)
+        .ToListAsync();
+    return Results.Ok(appointments);
+});
+
+app.MapPost("/logout", async (HttpContext context) =>
+{
+    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Ok();
+});
+
 // Remaining endpoints (user authentication, profiles, meetings, etc.)
 app.MapGet("/login", async (HttpContext context) =>
 {
@@ -398,3 +444,5 @@ app.MapGet("/delete-all-users", async (AppDbContext db) =>
 
 
 app.Run();
+
+record AppointmentRequest(string? Name, string? Location, string? Date, string? Time);
