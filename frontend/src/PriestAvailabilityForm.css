@@ -1,29 +1,19 @@
-
-/* Global Minimalistic Styling */
-body {
-  font-family: 'Poppins', sans-serif;
-  background-color: #f9f9f9;
-  color: #333;
-  margin: 0;
-  padding: 0;
-}
-
 /* Calendar Container */
 .boujee-container {
   max-width: 900px;
   margin: 50px auto;
   padding: 40px;
-  background-color: #ffffff;
+  background-color: var(--bg-card);
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  color: #333;
+  box-shadow: 0 4px 20px var(--shadow-sm);
+  color: var(--text-primary);
   font-size: 16px;
 }
 
 h2 {
   text-align: center;
   font-size: 28px;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 30px;
 }
 
@@ -57,12 +47,13 @@ h2 {
 }
 
 .calendar-day {
-  background-color: #f0f0f0;
+  background-color: var(--bg-day);
+  color: var(--text-primary);
   padding: 12px;
   border-radius: 8px;
   text-align: center;
   cursor: pointer;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.3s ease, color 0.3s ease;
   font-size: 18px;
   border: 1px solid transparent;
 }
@@ -79,40 +70,40 @@ h2 {
 }
 
 .available {
-  background-color: #e6f4ea;
-  color: #28a745;
+  background-color: var(--bg-day-available);
+  color: var(--text-available);
 }
 
 .unavailable {
-  background-color: #f0f0f0;
-  color: #a0a0a0;
+  background-color: var(--bg-day);
+  color: var(--text-muted);
 }
 
 .availability-details {
   margin-top: 30px;
   padding: 20px;
-  background-color: #f9f9f9;
+  background-color: var(--bg-surface);
   border-radius: 10px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-color);
 }
 
 .availability-details h3 {
   margin-bottom: 20px;
-  color: #333;
+  color: var(--text-primary);
   font-size: 18px;
 }
 
 .edit-availability {
   margin-top: 30px;
   padding: 20px;
-  background-color: #ffffff;
+  background-color: var(--bg-card);
   border-radius: 10px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 10px var(--shadow-lg);
 }
 
 .edit-availability h3 {
   margin-bottom: 20px;
-  color: #333;
+  color: var(--text-primary);
   font-size: 18px;
 }
 
@@ -125,14 +116,17 @@ h2 {
 .edit-availability label {
   margin-bottom: 5px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
-.edit-availability input[type="date"], 
-.edit-availability input[type="time"], 
+.edit-availability input[type="date"],
+.edit-availability input[type="time"],
 .edit-availability input[type="checkbox"] {
   padding: 10px;
   border-radius: 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-input);
+  color: var(--text-primary);
   font-size: 16px;
   outline: none;
   transition: border-color 0.2s ease-in-out;

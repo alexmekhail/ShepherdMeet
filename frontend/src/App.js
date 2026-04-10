@@ -6,10 +6,13 @@ import ConfirmationPage from './ConfirmationPage';
 import AppointmentConfirmed from './AppointmentConfirmed';
 import Login from './login';
 import Sidebar from './Sidebar';
+import { useTheme } from './useTheme';
+import './theme.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
 const App = () => {
+  const { theme, toggle: toggleTheme } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +41,11 @@ const App = () => {
     checkAuth();
   }, []);
 
+  const handleGuestLogin = () => {
+    setProfile({ firstName: 'Guest', lastName: '', email: '' });
+    setIsAuthenticated(true);
+  };
+
   const handleSignOut = () => {
     setIsAuthenticated(false);
     setProfile(null);
@@ -56,7 +64,7 @@ const App = () => {
   }
 
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
+    return <Login onLoginSuccess={() => setIsAuthenticated(true)} onGuestLogin={handleGuestLogin} />;
   }
 
   const isAdmin = profile?.email?.toLowerCase() === 'alexmekhail10@gmail.com';
@@ -67,6 +75,8 @@ const App = () => {
         profile={profile}
         onSignOut={handleSignOut}
         appointmentVersion={appointmentVersion}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <Routes>
         <Route

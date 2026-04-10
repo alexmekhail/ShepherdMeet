@@ -14,7 +14,7 @@ const formatDate = (dateStr) => {
   });
 };
 
-const Sidebar = ({ profile, onSignOut, appointmentVersion = 0 }) => {
+const Sidebar = ({ profile, onSignOut, appointmentVersion = 0, theme, onToggleTheme }) => {
   const [appointments, setAppointments] = useState([]);
   const [loadingAppts, setLoadingAppts] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
@@ -123,6 +123,9 @@ const Sidebar = ({ profile, onSignOut, appointmentVersion = 0 }) => {
 
         {/* Footer */}
         <div className="sidebar-footer">
+          <button className="theme-toggle-btn" onClick={onToggleTheme}>
+            {theme === 'dark' ? '☀ Light mode' : '☾ Dark mode'}
+          </button>
           <button className="signout-btn" onClick={handleSignOut}>
             Sign Out / Switch Account
           </button>

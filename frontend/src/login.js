@@ -4,7 +4,7 @@ import logo from './spsdlogo.png';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
-const Login = ({ onLoginSuccess }) => {
+const Login = ({ onLoginSuccess, onGuestLogin }) => {
   const handleGoogleSignIn = () => {
     window.location.href = `${API_URL}/login`;
   };
@@ -59,6 +59,10 @@ const Login = ({ onLoginSuccess }) => {
           <span className="gsi-material-button-contents" style={{ fontSize: '18px' }}>Sign in with Google</span>
           <span style={{ display: 'none' }}>Sign in with Google</span>
         </div>
+      </button>
+
+      <button className="guest-button" onClick={onGuestLogin}>
+        Continue as guest
       </button>
     </div>
   );
