@@ -66,6 +66,67 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// Seed random availability slots through end of year if none exist
+using (var seedScope = app.Services.CreateScope())
+{
+    var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    if (!seedDb.PriestAvailabilities.Any())
+    {
+        var rng = new Random(42);
+        var today = DateTime.Today;
+        var endOfYear = new DateTime(today.Year, 12, 31);
+        var slots = new List<PriestAvailabilityInput>();
+
+        for (var date = today.AddDays(1); date <= endOfYear; date = date.AddDays(1))
+        {
+            if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
+                continue;
+
+            // ~65% of weekdays have any availability
+            if (rng.NextDouble() > 0.65)
+                continue;
+
+            // Two possible windows: morning (9-12) and afternoon (14-17)
+            var windows = new[] { (9, 12), (14, 17) };
+            foreach (var (wStart, wEnd) in windows)
+            {
+                // ~55% chance to include each window
+                if (rng.NextDouble() > 0.55)
+                    continue;
+
+                for (var hour = wStart; hour < wEnd; hour++)
+                {
+                    foreach (var min in new[] { 0, 30 })
+                    {
+                        // ~75% chance each individual 30-min slot is available
+                        if (rng.NextDouble() > 0.75)
+                            continue;
+
+                        var slotStart = date.AddHours(hour).AddMinutes(min);
+                        var slotEnd = slotStart.AddMinutes(30);
+
+                        slots.Add(new PriestAvailabilityInput
+                        {
+                            UserID = 1,
+                            StartDate = slotStart,
+                            EndDate = slotEnd,
+                            Days = new List<string> { date.DayOfWeek.ToString() },
+                            StartTime = TimeSpan.FromHours(hour).Add(TimeSpan.FromMinutes(min)),
+                            EndTime = TimeSpan.FromHours(hour).Add(TimeSpan.FromMinutes(min + 30)),
+                            IsAvailable = true
+                        });
+                    }
+                }
+            }
+        }
+
+        seedDb.PriestAvailabilities.AddRange(slots);
+        seedDb.SaveChanges();
+        Console.WriteLine($"Seeded {slots.Count} availability slots through {endOfYear:yyyy-MM-dd}.");
+    }
+}
+
 var frontendUrl = app.Configuration["FrontendUrl"] ?? "http://localhost:3000";
 
 // Trust the HTTPS reverse proxy in Azure Container Apps.
