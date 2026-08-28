@@ -72,15 +72,24 @@ jobs:
             --username ${{ secrets.ACR_USERNAME }} \
             --password ${{ secrets.ACR_PASSWORD }}
 
+      - name: Sync backend secrets to Azure Container Apps
+        run: |
+          az containerapp secret set \
+            --name shepherdmeet-backend \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets "google-client-secret=${{ secrets.GOOGLE_CLIENT_SECRET }}"
+
       - name: Deploy backend to Azure Container Apps
         run: |
           az containerapp update \
             --name shepherdmeet-backend \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+            --min-replicas 1 \
+            --max-replicas 1 \
             --set-env-vars \
               "Authentication__Google__ClientId=${{ secrets.GOOGLE_CLIENT_ID }}" \
-              "Authentication__Google__ClientSecret=${{ secrets.GOOGLE_CLIENT_SECRET }}"
+              "Authentication__Google__ClientSecret=secretref:google-client-secret"
 
       - name: Deploy frontend to Azure Container Apps
         run: |

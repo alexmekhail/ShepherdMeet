@@ -24,8 +24,17 @@ builder.Services.AddCors(options =>
                    .AllowCredentials();
         });
 });
+// SQLite on the Azure Files (SMB) mount is single-writer and its file locking is
+// unreliable under concurrency, so the container app MUST stay at a single replica.
+// WAL mode is deliberately NOT enabled: it needs a memory-mapped -shm file, which
+// does not work on SMB/network shares and makes locking worse there.
+// A long command timeout lets Microsoft.Data.Sqlite retry through transient
+// SQLITE_BUSY (e.g. an overlapping replica during a rolling restart) instead of
+// throwing "database is locked".
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlite => sqlite.CommandTimeout(60)));
 
 var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
 var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
@@ -59,18 +68,44 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Auto-apply migrations on startup (creates the DB if it doesn't exist)
+// Auto-apply migrations on startup (creates the DB if it doesn't exist).
+// Retry: on the Azure Files SMB mount a just-terminated replica can hold the
+// file lock for a short while, so the first CREATE TABLE may hit SQLITE_BUSY.
 using (var scope = app.Services.CreateScope())
 {
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+
+    // Wait up to 30s for a lock rather than failing instantly.
+    db.Database.ExecuteSqlRaw("PRAGMA busy_timeout = 30000;");
+
+    const int maxAttempts = 10;
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            db.Database.Migrate();
+            break;
+        }
+        catch (Exception ex) when (attempt < maxAttempts)
+        {
+            startupLogger.LogWarning(ex,
+                "Migration attempt {Attempt}/{Max} failed ({Message}); retrying in 5s.",
+                attempt, maxAttempts, ex.Message);
+            Thread.Sleep(5000);
+        }
+    }
 }
 
-// Seed random availability slots through end of year if none exist
+// Seed random availability slots through end of year if none exist.
+// A seeding failure must never crash-loop the app, so it is best-effort.
 using (var seedScope = app.Services.CreateScope())
 {
+    var seedLogger = seedScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+  try
+  {
     if (!seedDb.PriestAvailabilities.Any())
     {
         var rng = new Random(42);
@@ -125,9 +160,27 @@ using (var seedScope = app.Services.CreateScope())
         seedDb.SaveChanges();
         Console.WriteLine($"Seeded {slots.Count} availability slots through {endOfYear:yyyy-MM-dd}.");
     }
+  }
+  catch (Exception ex)
+  {
+    seedLogger.LogError(ex, "Availability seeding failed; continuing startup without seed data.");
+  }
 }
 
 var frontendUrl = app.Configuration["FrontendUrl"] ?? "http://localhost:3000";
+
+// Emails allowed to hit destructive/admin endpoints. Override with the
+// "AdminEmails" config key (comma-separated) in production.
+var adminEmails = (app.Configuration["AdminEmails"] ?? "heneinfilobatire@gmail.com,alexmekhail10@gmail.com")
+    .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+bool IsAdmin(HttpContext ctx)
+{
+    var email = ctx.User.Claims.FirstOrDefault(c =>
+        c.Type == ClaimTypes.Email ||
+        c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
+    return email != null && adminEmails.Contains(email, StringComparer.OrdinalIgnoreCase);
+}
 
 // Trust the HTTPS reverse proxy in Azure Container Apps.
 // KnownNetworks/KnownProxies must be cleared so ASP.NET accepts
@@ -249,7 +302,8 @@ DateTime? GetDateForDayOfWeekInRange(DateTime startDate, DateTime endDate, DayOf
     return null;
 }
 
-app.MapDelete("/priestavailabilities", async (AppDbContext db) => {
+app.MapDelete("/priestavailabilities", async (HttpContext context, AppDbContext db) => {
+    if (!IsAdmin(context)) return Results.Unauthorized();
     db.PriestAvailabilities.RemoveRange(db.PriestAvailabilities);
     await db.SaveChangesAsync();
     return Results.NoContent();
@@ -496,22 +550,6 @@ app.MapPost("/users/cancel", (HttpContext context) =>
     // Logic to handle cancel operation
     return Results.Ok("Operation canceled.");
 });
-
-//remove later
-//work on backend for meeting
-app.MapGet("/delete-all-users", async (AppDbContext db) =>
-{
-    async Task DeleteAllUsers()
-    {
-        var users = await db.Users.ToListAsync();
-        db.Users.RemoveRange(users);
-        await db.SaveChangesAsync();
-    }
-
-    await DeleteAllUsers();
-    return Results.Ok("All users have been deleted.");
-});
-
 
 app.Run();
 

@@ -20,10 +20,16 @@ const App = () => {
   const [appointmentVersion, setAppointmentVersion] = useState(0);
 
   useEffect(() => {
+    const controller = new AbortController();
+    // Don't let a slow/unreachable backend hang the app on "Loading…" forever —
+    // fall through to the login screen after 8s.
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
     const checkAuth = async () => {
       try {
         const response = await fetch(`${API_URL}/profile`, {
           credentials: 'include',
+          signal: controller.signal,
         });
         if (response.ok) {
           const data = await response.json();
@@ -35,10 +41,16 @@ const App = () => {
       } catch {
         setIsAuthenticated(false);
       } finally {
+        clearTimeout(timeout);
         setLoading(false);
       }
     };
     checkAuth();
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
   }, []);
 
   const handleGuestLogin = () => {
