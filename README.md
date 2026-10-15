@@ -112,9 +112,9 @@ Migrations and seed data (demo accounts + sample availability) apply automatical
 
 ### Option B — Run services individually
 
-**Start Postgres** (or point at any local Postgres instance):
+**Start Postgres** (or point at any local Postgres instance — just match `appsettings.Development.json`):
 ```bash
-docker run -d --name shepherdmeet-pg -e POSTGRES_DB=shepherdmeet -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16-alpine
+docker run -d --name shepherdmeet-pg -e POSTGRES_DB=shepherdmeet -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5433:5432 postgres:16-alpine
 ```
 
 **Backend:**
