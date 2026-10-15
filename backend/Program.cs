@@ -6,8 +6,13 @@ using Microsoft.AspNetCore.HttpOverrides;
 using MinimalApiProject.Models;
 using System.Text.Json;
 using System.Security.Claims;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Render sets PORT at runtime; Kestrel needs to bind to it explicitly.
+var port = builder.Configuration["PORT"] ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 var allowedOrigins = builder.Configuration["AllowedOrigins"]?.Split(',', StringSplitOptions.TrimEntries)
     ?? new[] { "http://localhost:3000" };
@@ -24,17 +29,34 @@ builder.Services.AddCors(options =>
                    .AllowCredentials();
         });
 });
-// SQLite on the Azure Files (SMB) mount is single-writer and its file locking is
-// unreliable under concurrency, so the container app MUST stay at a single replica.
-// WAL mode is deliberately NOT enabled: it needs a memory-mapped -shm file, which
-// does not work on SMB/network shares and makes locking worse there.
-// A long command timeout lets Microsoft.Data.Sqlite retry through transient
-// SQLITE_BUSY (e.g. an overlapping replica during a rolling restart) instead of
-// throwing "database is locked".
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlite => sqlite.CommandTimeout(60)));
+    options.UseNpgsql(BuildPostgresConnectionString(builder.Configuration.GetConnectionString("DefaultConnection"))));
+
+// Neon (and most managed Postgres providers) hand out a postgres:// URI;
+// Npgsql wants a key=value connection string, so convert when needed.
+static string BuildPostgresConnectionString(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw))
+        throw new InvalidOperationException("No database connection string configured. Set ConnectionStrings__DefaultConnection.");
+
+    if (!raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+        !raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        return raw;
+
+    var uri = new Uri(raw);
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var csBuilder = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Database = uri.AbsolutePath.TrimStart('/'),
+        Username = Uri.UnescapeDataString(userInfo[0]),
+        Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : null,
+        SslMode = SslMode.Require,
+    };
+    return csBuilder.ConnectionString;
+}
 
 var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
 var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
@@ -49,7 +71,17 @@ var authBuilder = builder.Services.AddAuthentication(options =>
 })
 .AddCookie(options =>
 {
-    options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+    if (builder.Environment.IsDevelopment())
+    {
+        options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+    }
+    else
+    {
+        // Frontend and API live on different Render subdomains, so the auth
+        // cookie has to be sent cross-site.
+        options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    }
 });
 
 if (googleConfigured)
@@ -69,17 +101,13 @@ builder.Services.AddAuthorization();
 var app = builder.Build();
 
 // Auto-apply migrations on startup (creates the DB if it doesn't exist).
-// Retry: on the Azure Files SMB mount a just-terminated replica can hold the
-// file lock for a short while, so the first CREATE TABLE may hit SQLITE_BUSY.
+// Retry a few times in case Neon's compute is waking up from idle suspend.
 using (var scope = app.Services.CreateScope())
 {
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    // Wait up to 30s for a lock rather than failing instantly.
-    db.Database.ExecuteSqlRaw("PRAGMA busy_timeout = 30000;");
-
-    const int maxAttempts = 10;
+    const int maxAttempts = 5;
     for (var attempt = 1; ; attempt++)
     {
         try
@@ -90,9 +118,9 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex) when (attempt < maxAttempts)
         {
             startupLogger.LogWarning(ex,
-                "Migration attempt {Attempt}/{Max} failed ({Message}); retrying in 5s.",
+                "Migration attempt {Attempt}/{Max} failed ({Message}); retrying in 3s.",
                 attempt, maxAttempts, ex.Message);
-            Thread.Sleep(5000);
+            Thread.Sleep(3000);
         }
     }
 }
@@ -167,11 +195,63 @@ using (var seedScope = app.Services.CreateScope())
   }
 }
 
+// Seed two demo accounts (parishioner + admin) so recruiters can click
+// through the whole app via the demo-login buttons without a Google account.
+using (var demoScope = app.Services.CreateScope())
+{
+    var demoLogger = demoScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var demoDb = demoScope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    try
+    {
+        async Task<User> EnsureDemoUserAsync(string email, string firstName, string lastName)
+        {
+            var existing = await demoDb.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (existing != null) return existing;
+
+            var created = new User { Email = email, FirstName = firstName, LastName = lastName };
+            demoDb.Users.Add(created);
+            await demoDb.SaveChangesAsync();
+            return created;
+        }
+
+        var demoParishioner = await EnsureDemoUserAsync("demo.parishioner@shepherdmeet.app", "Demo", "Parishioner");
+        await EnsureDemoUserAsync("demo.admin@shepherdmeet.app", "Demo", "Admin (Priest)");
+
+        if (!demoDb.Appointments.Any(a => a.UserID == demoParishioner.ID))
+        {
+            var today = DateTime.Today;
+            demoDb.Appointments.AddRange(
+                new Appointment
+                {
+                    UserID = demoParishioner.ID,
+                    Name = "Demo Parishioner",
+                    Location = "Church Office",
+                    Date = today.AddDays(5).ToString("yyyy-MM-dd"),
+                    Time = "10:00 AM",
+                },
+                new Appointment
+                {
+                    UserID = demoParishioner.ID,
+                    Name = "Demo Parishioner",
+                    Location = "Church Office",
+                    Date = today.AddDays(-10).ToString("yyyy-MM-dd"),
+                    Time = "2:30 PM",
+                });
+            await demoDb.SaveChangesAsync();
+        }
+    }
+    catch (Exception ex)
+    {
+        demoLogger.LogError(ex, "Demo account seeding failed; continuing startup without demo accounts.");
+    }
+}
+
 var frontendUrl = app.Configuration["FrontendUrl"] ?? "http://localhost:3000";
 
 // Emails allowed to hit destructive/admin endpoints. Override with the
 // "AdminEmails" config key (comma-separated) in production.
-var adminEmails = (app.Configuration["AdminEmails"] ?? "heneinfilobatire@gmail.com,alexmekhail10@gmail.com")
+var adminEmails = (app.Configuration["AdminEmails"] ?? "heneinfilobatire@gmail.com,alexmekhail10@gmail.com,demo.admin@shepherdmeet.app")
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
 bool IsAdmin(HttpContext ctx)
@@ -182,9 +262,9 @@ bool IsAdmin(HttpContext ctx)
     return email != null && adminEmails.Contains(email, StringComparer.OrdinalIgnoreCase);
 }
 
-// Trust the HTTPS reverse proxy in Azure Container Apps.
+// Trust the HTTPS reverse proxy in front of the app (Render).
 // KnownNetworks/KnownProxies must be cleared so ASP.NET accepts
-// X-Forwarded-Proto from Azure's dynamic proxy IPs.
+// X-Forwarded-Proto from the platform's dynamic proxy IPs.
 var forwardedOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
@@ -197,6 +277,39 @@ app.UseForwardedHeaders(forwardedOptions);
 app.UseCors("AllowSpecificOrigin");
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/health", async (AppDbContext db) =>
+{
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("SELECT 1");
+        return Results.Ok(new { status = "healthy" });
+    }
+    catch (Exception)
+    {
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+});
+
+app.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, DemoLoginRequest? body) =>
+{
+    var email = string.Equals(body?.Role, "admin", StringComparison.OrdinalIgnoreCase)
+        ? "demo.admin@shepherdmeet.app"
+        : "demo.parishioner@shepherdmeet.app";
+
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
+    if (user == null) return Results.Problem("Demo account is not seeded yet.", statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.Email, user.Email!),
+        new Claim(ClaimTypes.GivenName, user.FirstName ?? string.Empty),
+        new Claim(ClaimTypes.Surname, user.LastName ?? string.Empty),
+    };
+    var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+    await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+    return Results.Ok();
+});
 
 app.MapGet("/priestavailabilities", async (AppDbContext db) => {
     var availabilityList = await db.PriestAvailabilities.ToListAsync();
@@ -471,7 +584,8 @@ app.MapGet("/profile", async (HttpContext context, AppDbContext db) =>
         Id = user.ID,
         Email = user.Email,
         FirstName = user.FirstName,
-        LastName = user.LastName
+        LastName = user.LastName,
+        IsAdmin = IsAdmin(context)
     };
 
     return Results.Ok(result);
@@ -496,7 +610,8 @@ app.MapPost("/profile", async (HttpContext context, AppDbContext db) =>
         Id = user.ID,
         Email = user.Email,
         FirstName = user.FirstName,
-        LastName = user.LastName
+        LastName = user.LastName,
+        IsAdmin = IsAdmin(context)
     };
 
     return Results.Ok(result);
@@ -554,3 +669,4 @@ app.MapPost("/users/cancel", (HttpContext context) =>
 app.Run();
 
 record AppointmentRequest(string? Name, string? Location, string? Date, string? Time);
+record DemoLoginRequest(string? Role);

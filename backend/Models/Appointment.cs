@@ -8,6 +8,6 @@ namespace MinimalApiProject.Models
         public string Location { get; set; } = string.Empty;
         public string Date { get; set; } = string.Empty;
         public string Time { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
     }
 }

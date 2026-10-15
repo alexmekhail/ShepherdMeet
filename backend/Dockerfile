@@ -15,5 +15,4 @@ RUN dotnet publish -c Release -o /app/publish --no-restore
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-RUN mkdir -p /data
 ENTRYPOINT ["dotnet", "ShepherdMeet.dll"]
