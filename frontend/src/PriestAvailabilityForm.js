@@ -146,27 +146,6 @@ const PriestAvailabilityForm = () => {
     }
   };
 
-  const handleDaysChange = (e) => {
-    const { value, checked } = e.target;
-    const updatedDays = checked
-      ? [...newAvailability.days, value]
-      : newAvailability.days.filter((day) => day !== value);
-
-    setNewAvailability({ ...newAvailability, days: updatedDays });
-  };
-
-  const handleEditClick = (availability) => {
-    setEditingAvailability(availability);
-    setNewAvailability({
-      startDate: availability.startDate,
-      endDate: availability.endDate,
-      days: availability.days,
-      startTime: availability.startTime,
-      endTime: availability.endTime,
-      isAvailable: availability.isAvailable,
-    });
-  };
-
   const isAvailableDay = (day) => {
     return availabilities.some(availability =>
       new Date(availability.startDate).getDate() === day && availability.isAvailable

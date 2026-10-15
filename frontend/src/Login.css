@@ -41,17 +41,38 @@
   color: var(--text-primary);
 }
 
-.guest-button {
-  margin-top: 12px;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 14px;
-  cursor: pointer;
-  text-decoration: underline;
-  padding: 4px 8px;
+.demo-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 24px;
+  width: 400px;
 }
 
-.guest-button:hover {
+.demo-divider {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.demo-button {
+  width: 100%;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
   color: var(--text-primary);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.demo-button:hover:not(:disabled) {
+  background-color: var(--bg-day);
+}
+
+.demo-button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

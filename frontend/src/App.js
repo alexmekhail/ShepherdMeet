@@ -16,14 +16,19 @@ const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Render's free tier spins the API down after 15 minutes idle; the first
+  // request can take ~a minute to wake it back up. Show a notice once the
+  // initial auth check has been waiting a while, so it doesn't look stuck.
+  const [waking, setWaking] = useState(false);
   // Incrementing this tells the Sidebar to re-fetch appointments
   const [appointmentVersion, setAppointmentVersion] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     // Don't let a slow/unreachable backend hang the app on "Loading…" forever —
-    // fall through to the login screen after 8s.
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    // fall through to the login screen after 70s (enough for a Render cold start).
+    const timeout = setTimeout(() => controller.abort(), 70000);
+    const wakingTimer = setTimeout(() => setWaking(true), 3000);
 
     const checkAuth = async () => {
       try {
@@ -42,6 +47,8 @@ const App = () => {
         setIsAuthenticated(false);
       } finally {
         clearTimeout(timeout);
+        clearTimeout(wakingTimer);
+        setWaking(false);
         setLoading(false);
       }
     };
@@ -49,14 +56,22 @@ const App = () => {
 
     return () => {
       clearTimeout(timeout);
-      controller.abort();
+      clearTimeout(wakingTimer);
     };
   }, []);
 
-  const handleGuestLogin = () => {
-    setProfile({ firstName: 'Guest', lastName: '', email: '' });
-    setIsAuthenticated(true);
-  };
+  const handleAuthenticated = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/profile`, { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setProfile(data);
+        setIsAuthenticated(true);
+      }
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    }
+  }, []);
 
   const handleSignOut = () => {
     setIsAuthenticated(false);
@@ -69,17 +84,23 @@ const App = () => {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20%', fontSize: '1.2rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '20%', fontSize: '1.2rem' }}>
         Loading...
+        {waking && (
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: 360, textAlign: 'center' }}>
+            Waking up the server — this runs on free hosting that falls asleep
+            after inactivity, so first load can take about a minute.
+          </p>
+        )}
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => setIsAuthenticated(true)} onGuestLogin={handleGuestLogin} />;
+    return <Login onAuthenticated={handleAuthenticated} />;
   }
 
-  const isAdmin = profile?.email?.toLowerCase() === 'alexmekhail10@gmail.com';
+  const isAdmin = profile?.isAdmin === true;
 
   return (
     <>

@@ -1,12 +1,33 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import './Login.css';
 import logo from './spsdlogo.png';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
 
-const Login = ({ onLoginSuccess, onGuestLogin }) => {
+const Login = ({ onAuthenticated }) => {
+  const [demoLoading, setDemoLoading] = useState(null);
+
   const handleGoogleSignIn = () => {
     window.location.href = `${API_URL}/login`;
+  };
+
+  const handleDemoLogin = async (role) => {
+    setDemoLoading(role);
+    try {
+      const response = await fetch(`${API_URL}/auth/demo-login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (response.ok) {
+        onAuthenticated();
+      }
+    } catch (error) {
+      console.error('Demo login failed:', error);
+    } finally {
+      setDemoLoading(null);
+    }
   };
 
   useEffect(() => {
@@ -20,7 +41,7 @@ const Login = ({ onLoginSuccess, onGuestLogin }) => {
         if (response.ok) {
           const profile = await response.json();
           if (profile && profile.email) {
-            onLoginSuccess();
+            onAuthenticated();
           }
         }
       } catch (error) {
@@ -31,7 +52,7 @@ const Login = ({ onLoginSuccess, onGuestLogin }) => {
     const intervalId = setInterval(checkLoginStatus, 2000);
 
     return () => clearInterval(intervalId);
-  }, [onLoginSuccess]);
+  }, [onAuthenticated]);
 
   return (
     <div className="login-container">
@@ -61,9 +82,23 @@ const Login = ({ onLoginSuccess, onGuestLogin }) => {
         </div>
       </button>
 
-      <button className="guest-button" onClick={onGuestLogin}>
-        Continue as guest
-      </button>
+      <div className="demo-section">
+        <div className="demo-divider">or try it instantly</div>
+        <button
+          className="demo-button"
+          onClick={() => handleDemoLogin('parishioner')}
+          disabled={demoLoading !== null}
+        >
+          {demoLoading === 'parishioner' ? 'Signing in…' : 'Demo as Parishioner'}
+        </button>
+        <button
+          className="demo-button"
+          onClick={() => handleDemoLogin('admin')}
+          disabled={demoLoading !== null}
+        >
+          {demoLoading === 'admin' ? 'Signing in…' : 'Demo as Priest (Admin)'}
+        </button>
+      </div>
     </div>
   );
 };
