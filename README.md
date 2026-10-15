@@ -2,7 +2,7 @@
 
 A full-stack appointment scheduler for booking one-on-one meetings with a parish priest — Google sign-in, a live availability calendar, and an admin panel for managing open slots.
 
-**Live demo:** [shepherdmeet-frontend.onrender.com](https://shepherdmeet-frontend.onrender.com) <!-- TODO: update if Render assigns a different URL — service names are first-come, first-served --> — click **Demo as Parishioner** or **Demo as Priest (Admin)** to sign in instantly, no account needed.
+**Live demo:** [shepherdmeet-frontend.onrender.com](https://shepherdmeet-frontend.onrender.com) — click **Demo as Parishioner** or **Demo as Priest (Admin)** to sign in instantly, no account needed.
 
 > ⏱️ This runs on free hosting that sleeps after 15 minutes of inactivity. The first load after a while can take **about a minute** to wake back up — the app shows a notice while it does.
 
