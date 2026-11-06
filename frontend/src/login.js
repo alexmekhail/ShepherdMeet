@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './Login.css';
 import logo from './spsdlogo.png';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209/api';
 
 const Login = ({ onAuthenticated }) => {
   const [demoLoading, setDemoLoading] = useState(null);

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './WeeklyAvailabilityForm.css';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209/api';
 
 const WeeklyAvailabilityForm = () => {
     const [weeklyHours, setWeeklyHours] = useState({

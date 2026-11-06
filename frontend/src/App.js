@@ -9,7 +9,7 @@ import Sidebar from './Sidebar';
 import { useTheme } from './useTheme';
 import './theme.css';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209/api';
 
 const App = () => {
   const { theme, toggle: toggleTheme } = useTheme();
