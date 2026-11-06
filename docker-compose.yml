@@ -17,6 +17,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # Migrations are no longer applied by the backend on startup (see
+  # Program.cs), so this one-off service runs them before `backend` boots.
+  migrate:
+    build:
+      context: ./backend
+    command: ["dotnet", "ShepherdMeet.dll", "--migrate"]
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=shepherdmeet;Username=postgres;Password=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     build:
       context: ./backend
@@ -30,16 +42,16 @@ services:
       AllowedOrigins: http://localhost:3000
       FrontendUrl: http://localhost:3000
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build:
       context: ./frontend
       args:
-        REACT_APP_API_URL: http://localhost:5209
+        REACT_APP_API_URL: http://localhost:5209/api
     ports:
-      - "3000:80"
+      - "3000:8080"
     depends_on:
       - backend
 
