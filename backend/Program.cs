@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -10,7 +11,7 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Render sets PORT at runtime; Kestrel needs to bind to it explicitly.
+// The hosting platform sets PORT at runtime; Kestrel needs to bind to it explicitly.
 var port = builder.Configuration["PORT"] ?? "8080";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
@@ -33,8 +34,19 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(BuildPostgresConnectionString(builder.Configuration.GetConnectionString("DefaultConnection"))));
 
+// Persist DataProtection keys (which encrypt/sign the auth cookie) to
+// Postgres instead of the default per-instance ephemeral storage — without
+// this, a cookie issued by one container instance fails to validate on
+// another once the platform scales out or recycles an instance.
+builder.Services.AddDataProtection()
+    .PersistKeysToDbContext<AppDbContext>()
+    .SetApplicationName("ShepherdMeet");
+
 // Neon (and most managed Postgres providers) hand out a postgres:// URI;
 // Npgsql wants a key=value connection string, so convert when needed.
+// Pool is kept small since each container instance keeps its own pool and
+// Neon's pooled (pgbouncer) endpoint has a limited number of slots to hand out;
+// MinPoolSize=0 lets an idle/cold-started instance hold zero connections.
 static string BuildPostgresConnectionString(string? raw)
 {
     if (string.IsNullOrWhiteSpace(raw))
@@ -54,6 +66,9 @@ static string BuildPostgresConnectionString(string? raw)
         Username = Uri.UnescapeDataString(userInfo[0]),
         Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : null,
         SslMode = SslMode.Require,
+        Pooling = true,
+        MinPoolSize = 0,
+        MaxPoolSize = 10,
     };
     return csBuilder.ConnectionString;
 }
@@ -77,9 +92,9 @@ var authBuilder = builder.Services.AddAuthentication(options =>
     }
     else
     {
-        // Frontend and API live on different Render subdomains, so the auth
-        // cookie has to be sent cross-site.
-        options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None;
+        // Frontend and API are routed through the same Vercel domain
+        // (services + a path rewrite), so the auth cookie is first-party.
+        options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
     }
 });
@@ -90,7 +105,11 @@ if (googleConfigured)
     {
         options.ClientId = googleClientId!;
         options.ClientSecret = googleClientSecret!;
-        options.CallbackPath = "/signin-google";
+        // Public path is /api/signin-google (the backend service has no
+        // path-stripping transform applied to it — Vercel's container
+        // runtime forwards the request path as-is), so the callback and the
+        // Google Cloud Console redirect URI must both use the /api prefix.
+        options.CallbackPath = "/api/signin-google";
         options.Scope.Add("email");
         options.Scope.Add("profile");
     });
@@ -100,29 +119,17 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Auto-apply migrations on startup (creates the DB if it doesn't exist).
-// Retry a few times in case Neon's compute is waking up from idle suspend.
-using (var scope = app.Services.CreateScope())
+// Migrations are a separate, explicit step (never run on normal container
+// startup, so a cold start never blocks on DB schema work): run with
+//   dotnet ShepherdMeet.dll --migrate
+// against the target ConnectionStrings__DefaultConnection.
+if (args.Contains("--migrate"))
 {
-    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-    const int maxAttempts = 5;
-    for (var attempt = 1; ; attempt++)
-    {
-        try
-        {
-            db.Database.Migrate();
-            break;
-        }
-        catch (Exception ex) when (attempt < maxAttempts)
-        {
-            startupLogger.LogWarning(ex,
-                "Migration attempt {Attempt}/{Max} failed ({Message}); retrying in 3s.",
-                attempt, maxAttempts, ex.Message);
-            Thread.Sleep(3000);
-        }
-    }
+    using var migrateScope = app.Services.CreateScope();
+    var db = migrateScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+    Console.WriteLine("Migrations applied.");
+    return;
 }
 
 // Seed random availability slots through end of year if none exist.
@@ -262,7 +269,7 @@ bool IsAdmin(HttpContext ctx)
     return email != null && adminEmails.Contains(email, StringComparer.OrdinalIgnoreCase);
 }
 
-// Trust the HTTPS reverse proxy in front of the app (Render).
+// Trust the HTTPS reverse proxy in front of the app (the hosting platform).
 // KnownNetworks/KnownProxies must be cleared so ASP.NET accepts
 // X-Forwarded-Proto from the platform's dynamic proxy IPs.
 var forwardedOptions = new ForwardedHeadersOptions
@@ -278,7 +285,12 @@ app.UseCors("AllowSpecificOrigin");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", async (AppDbContext db) =>
+// Vercel's rewrite sends every public /api/* request to this service as-is
+// (no path-stripping for container-runtime services), so every route below
+// is grouped under /api to match what the browser actually requests.
+var api = app.MapGroup("/api");
+
+api.MapGet("/health", async (AppDbContext db) =>
 {
     try
     {
@@ -291,7 +303,7 @@ app.MapGet("/health", async (AppDbContext db) =>
     }
 });
 
-app.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, DemoLoginRequest? body) =>
+api.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, DemoLoginRequest? body) =>
 {
     var email = string.Equals(body?.Role, "admin", StringComparison.OrdinalIgnoreCase)
         ? "demo.admin@shepherdmeet.app"
@@ -311,7 +323,7 @@ app.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, Dem
     return Results.Ok();
 });
 
-app.MapGet("/priestavailabilities", async (AppDbContext db) => {
+api.MapGet("/priestavailabilities", async (AppDbContext db) => {
     var availabilityList = await db.PriestAvailabilities.ToListAsync();
 
     // Format the response to include formatted times
@@ -330,7 +342,7 @@ app.MapGet("/priestavailabilities", async (AppDbContext db) => {
     return Results.Ok(formattedAvailabilityList);
 });
 
-app.MapPost("/priestavailabilities", async (PriestAvailabilityInput availability, AppDbContext db) => {
+api.MapPost("/priestavailabilities", async (PriestAvailabilityInput availability, AppDbContext db) => {
     // Loop through the provided days of availability
     foreach (var day in availability.Days)
     {
@@ -415,14 +427,14 @@ DateTime? GetDateForDayOfWeekInRange(DateTime startDate, DateTime endDate, DayOf
     return null;
 }
 
-app.MapDelete("/priestavailabilities", async (HttpContext context, AppDbContext db) => {
+api.MapDelete("/priestavailabilities", async (HttpContext context, AppDbContext db) => {
     if (!IsAdmin(context)) return Results.Unauthorized();
     db.PriestAvailabilities.RemoveRange(db.PriestAvailabilities);
     await db.SaveChangesAsync();
     return Results.NoContent();
 });
 
-app.MapDelete("/priestavailabilities/{id:int}", async (int id, AppDbContext db) => {
+api.MapDelete("/priestavailabilities/{id:int}", async (int id, AppDbContext db) => {
     var slot = await db.PriestAvailabilities.FindAsync(id);
     if (slot == null) return Results.NotFound();
     db.PriestAvailabilities.Remove(slot);
@@ -431,7 +443,7 @@ app.MapDelete("/priestavailabilities/{id:int}", async (int id, AppDbContext db) 
 });
 
 // Frontend integration: Example payload for priest availability
-app.MapPost("/priestavailabilities/frontend", async (HttpContext context, AppDbContext db) =>
+api.MapPost("/priestavailabilities/frontend", async (HttpContext context, AppDbContext db) =>
 {
     // Reading JSON data from frontend
     var availabilityData = await context.Request.ReadFromJsonAsync<PriestAvailabilityInput>();
@@ -471,9 +483,9 @@ app.MapPost("/priestavailabilities/frontend", async (HttpContext context, AppDbC
     return Results.Created($"/priestavailabilities/{availabilityData.ID}", availabilityData);
 });
 
-app.MapGet("/", () => "Hello World!");
+api.MapGet("/", () => "Hello World!");
 
-app.MapPost("/appointments", async (HttpContext context, AppDbContext db) =>
+api.MapPost("/appointments", async (HttpContext context, AppDbContext db) =>
 {
     var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
     if (string.IsNullOrEmpty(emailClaim)) return Results.Unauthorized();
@@ -497,7 +509,7 @@ app.MapPost("/appointments", async (HttpContext context, AppDbContext db) =>
     return Results.Created($"/appointments/{appt.ID}", appt);
 });
 
-app.MapGet("/appointments", async (HttpContext context, AppDbContext db) =>
+api.MapGet("/appointments", async (HttpContext context, AppDbContext db) =>
 {
     var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
     if (string.IsNullOrEmpty(emailClaim)) return Results.Unauthorized();
@@ -513,22 +525,22 @@ app.MapGet("/appointments", async (HttpContext context, AppDbContext db) =>
     return Results.Ok(appointments);
 });
 
-app.MapPost("/logout", async (HttpContext context) =>
+api.MapPost("/logout", async (HttpContext context) =>
 {
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Ok();
 });
 
 // Remaining endpoints (user authentication, profiles, meetings, etc.)
-app.MapGet("/login", async (HttpContext context) =>
+api.MapGet("/login", async (HttpContext context) =>
 {
     await context.ChallengeAsync(GoogleDefaults.AuthenticationScheme, new AuthenticationProperties
     {
-        RedirectUri = "/post-login"
+        RedirectUri = "/api/post-login"
     });
 });
 
-app.MapGet("/post-login", async (HttpContext context, AppDbContext db) =>
+api.MapGet("/post-login", async (HttpContext context, AppDbContext db) =>
 {
     if (context.User?.Identity?.IsAuthenticated == true)
     {
@@ -565,7 +577,7 @@ app.MapGet("/post-login", async (HttpContext context, AppDbContext db) =>
 });
 
 
-app.MapGet("/profile", async (HttpContext context, AppDbContext db) =>
+api.MapGet("/profile", async (HttpContext context, AppDbContext db) =>
 {
     var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
     if (string.IsNullOrEmpty(emailClaim))
@@ -591,7 +603,7 @@ app.MapGet("/profile", async (HttpContext context, AppDbContext db) =>
     return Results.Ok(result);
 });
 
-app.MapPost("/profile", async (HttpContext context, AppDbContext db) =>
+api.MapPost("/profile", async (HttpContext context, AppDbContext db) =>
 {
     var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
     if (string.IsNullOrEmpty(emailClaim))
@@ -620,7 +632,7 @@ app.MapPost("/profile", async (HttpContext context, AppDbContext db) =>
 
 
 
-app.MapGet("/users", async (HttpContext context, AppDbContext db) =>
+api.MapGet("/users", async (HttpContext context, AppDbContext db) =>
 {
     var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
     if (emailClaim != "heneinfilobatire@gmail.com")
@@ -632,7 +644,7 @@ app.MapGet("/users", async (HttpContext context, AppDbContext db) =>
     return Results.Ok(users);
 });
 
-app.MapPut("/users/{id}", async (int id, HttpContext context, User updatedUser, AppDbContext db) =>
+api.MapPut("/users/{id}", async (int id, HttpContext context, User updatedUser, AppDbContext db) =>
 {
     var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
     if (emailClaim != "heneinfilobatire@gmail.com")
@@ -654,7 +666,7 @@ app.MapPut("/users/{id}", async (int id, HttpContext context, User updatedUser, 
     return Results.Ok(user);
 });
 
-app.MapPost("/users/cancel", (HttpContext context) =>
+api.MapPost("/users/cancel", (HttpContext context) =>
 {
     var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
     if (emailClaim != "heneinfilobatire@gmail.com")
