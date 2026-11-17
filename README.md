@@ -4,7 +4,7 @@ A full-stack appointment scheduler for booking one-on-one meetings with a parish
 
 **Live demo:** [shepherdmeet.vercel.app](https://shepherdmeet.vercel.app) — click **Demo as Parishioner** or **Demo as Priest (Admin)** to sign in instantly, no account needed.
 
-> ⏱️ Measured after a genuine 16-minute idle period: first request **~2.5s**, immediate follow-up **~0.27s**. No more 30–60s Render free-tier wake-up.
+> ⏱️ Measured after a genuine 16-minute idle period: first request **~2.5s**, immediate follow-up **~0.27s**. No more 30–60s cold-start wake-up from the old Azure / Render free-tier hosting.
 
 ![Booking calendar screenshot](docs/screenshot-booking.png)
 <!-- TODO: add a screenshot or short GIF of the booking flow and admin panel -->
