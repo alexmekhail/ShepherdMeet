@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using MinimalApiProject.Models;
-using System.Text.Json;
+using System.Globalization;
 using System.Security.Claims;
 using Npgsql;
 
@@ -75,6 +75,7 @@ static string BuildPostgresConnectionString(string? raw)
 
 var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
 var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+var demoEnabled = builder.Configuration.GetValue("Demo:Enabled", builder.Environment.IsDevelopment());
 var googleConfigured = !string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret);
 
 var authBuilder = builder.Services.AddAuthentication(options =>
@@ -86,6 +87,17 @@ var authBuilder = builder.Services.AddAuthentication(options =>
 })
 .AddCookie(options =>
 {
+    options.Cookie.HttpOnly = true;
+    options.Events.OnValidatePrincipal = async context =>
+    {
+        var email = context.Principal?.FindFirstValue(ClaimTypes.Email);
+        if (email is "demo.admin@shepherdmeet.app" or "demo.parishioner@shepherdmeet.app"
+            && (!demoEnabled || context.Principal?.HasClaim("shepherdmeet_demo", "true") != true))
+        {
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync();
+        }
+    };
     if (builder.Environment.IsDevelopment())
     {
         options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
@@ -118,6 +130,8 @@ if (googleConfigured)
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+var scheduling = new Scheduling(app.Configuration["Scheduling:TimeZone"] ?? "America/Los_Angeles");
+
 
 // Migrations are a separate, explicit step (never run on normal container
 // startup, so a cold start never blocks on DB schema work): run with
@@ -134,6 +148,7 @@ if (args.Contains("--migrate"))
 
 // Seed random availability slots through end of year if none exist.
 // A seeding failure must never crash-loop the app, so it is best-effort.
+if (demoEnabled)
 using (var seedScope = app.Services.CreateScope())
 {
     var seedLogger = seedScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
@@ -141,10 +156,11 @@ using (var seedScope = app.Services.CreateScope())
 
   try
   {
+    using var transaction = Scheduling.LockAsync(seedDb, CancellationToken.None).GetAwaiter().GetResult();
     if (!seedDb.PriestAvailabilities.Any())
     {
         var rng = new Random(42);
-        var today = DateTime.Today;
+        var today = scheduling.Today;
         var endOfYear = new DateTime(today.Year, 12, 31);
         var slots = new List<PriestAvailabilityInput>();
 
@@ -195,6 +211,7 @@ using (var seedScope = app.Services.CreateScope())
         seedDb.SaveChanges();
         Console.WriteLine($"Seeded {slots.Count} availability slots through {endOfYear:yyyy-MM-dd}.");
     }
+    transaction.Commit();
   }
   catch (Exception ex)
   {
@@ -204,6 +221,7 @@ using (var seedScope = app.Services.CreateScope())
 
 // Seed two demo accounts (parishioner + admin) so recruiters can click
 // through the whole app via the demo-login buttons without a Google account.
+if (demoEnabled)
 using (var demoScope = app.Services.CreateScope())
 {
     var demoLogger = demoScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
@@ -211,6 +229,7 @@ using (var demoScope = app.Services.CreateScope())
 
     try
     {
+        await using var transaction = await Scheduling.LockAsync(demoDb, CancellationToken.None);
         async Task<User> EnsureDemoUserAsync(string email, string firstName, string lastName)
         {
             var existing = await demoDb.Users.FirstOrDefaultAsync(u => u.Email == email);
@@ -227,7 +246,7 @@ using (var demoScope = app.Services.CreateScope())
 
         if (!demoDb.Appointments.Any(a => a.UserID == demoParishioner.ID))
         {
-            var today = DateTime.Today;
+            var today = scheduling.Today;
             demoDb.Appointments.AddRange(
                 new Appointment
                 {
@@ -247,6 +266,7 @@ using (var demoScope = app.Services.CreateScope())
                 });
             await demoDb.SaveChangesAsync();
         }
+        await transaction.CommitAsync();
     }
     catch (Exception ex)
     {
@@ -256,16 +276,28 @@ using (var demoScope = app.Services.CreateScope())
 
 var frontendUrl = app.Configuration["FrontendUrl"] ?? "http://localhost:3000";
 
-// Emails allowed to hit destructive/admin endpoints. Override with the
-// "AdminEmails" config key (comma-separated) in production.
-var adminEmails = (app.Configuration["AdminEmails"] ?? "heneinfilobatire@gmail.com,alexmekhail10@gmail.com,demo.admin@shepherdmeet.app")
+// Schedule and account management have independent allowlists.
+var adminEmails = (app.Configuration["AdminEmails"] ?? "")
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+var accountAdminEmails = (app.Configuration["AccountAdminEmails"] ?? "")
+    .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+bool CanManageAccounts(HttpContext context)
+{
+    var email = context.User.FindFirstValue(ClaimTypes.Email);
+    return context.User.Identity?.IsAuthenticated == true
+        && !context.User.HasClaim("shepherdmeet_demo", "true")
+        && email != null
+        && accountAdminEmails.Contains(email, StringComparer.OrdinalIgnoreCase);
+}
 
 bool IsAdmin(HttpContext ctx)
 {
-    var email = ctx.User.Claims.FirstOrDefault(c =>
-        c.Type == ClaimTypes.Email ||
-        c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
+    if (ctx.User.Identity?.IsAuthenticated != true) return false;
+    var email = ctx.User.FindFirstValue(ClaimTypes.Email);
+    if (ctx.User.HasClaim("shepherdmeet_demo", "true"))
+        return demoEnabled && email == "demo.admin@shepherdmeet.app";
     return email != null && adminEmails.Contains(email, StringComparer.OrdinalIgnoreCase);
 }
 
@@ -282,6 +314,19 @@ app.UseForwardedHeaders(forwardedOptions);
 
 // Configure the HTTP request pipeline.
 app.UseCors("AllowSpecificOrigin");
+app.Use(async (context, next) =>
+{
+    var request = context.Request;
+    if (!HttpMethods.IsGet(request.Method) && !HttpMethods.IsHead(request.Method)
+        && !HttpMethods.IsOptions(request.Method) && request.Headers.TryGetValue("Origin", out var origin)
+        && !allowedOrigins.Contains(origin.ToString(), StringComparer.OrdinalIgnoreCase)
+        && !string.Equals(frontendUrl.TrimEnd('/'), origin.ToString(), StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+    await next(context);
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -305,6 +350,7 @@ api.MapGet("/health", async (AppDbContext db) =>
 
 api.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, DemoLoginRequest? body) =>
 {
+    if (!demoEnabled) return Results.NotFound();
     var email = string.Equals(body?.Role, "admin", StringComparison.OrdinalIgnoreCase)
         ? "demo.admin@shepherdmeet.app"
         : "demo.parishioner@shepherdmeet.app";
@@ -315,6 +361,7 @@ api.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, Dem
     var claims = new List<Claim>
     {
         new Claim(ClaimTypes.Email, user.Email!),
+        new Claim("shepherdmeet_demo", "true"),
         new Claim(ClaimTypes.GivenName, user.FirstName ?? string.Empty),
         new Claim(ClaimTypes.Surname, user.LastName ?? string.Empty),
     };
@@ -323,191 +370,218 @@ api.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, Dem
     return Results.Ok();
 });
 
-api.MapGet("/priestavailabilities", async (AppDbContext db) => {
-    var availabilityList = await db.PriestAvailabilities.ToListAsync();
+api.MapGet("/priestavailabilities", async (AppDbContext db, CancellationToken cancellation) =>
+{
+    var today = scheduling.Today;
+    var earliest = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var slots = await db.PriestAvailabilities.Where(a => a.StartDate >= today)
+        .OrderBy(a => a.StartDate).ThenBy(a => a.ID).ToListAsync(cancellation);
+    var appointments = await db.Appointments.Where(a => string.Compare(a.Date, earliest) >= 0)
+        .Select(a => new { a.Date, a.Time, a.StartUtc, a.EndUtc }).ToListAsync(cancellation);
+    var byDate = appointments.ToLookup(a => a.Date);
+    var blocked = slots.Where(a => !a.IsAvailable).ToLookup(a => a.StartDate.Date);
+    var now = DateTime.UtcNow;
 
-    // Format the response to include formatted times
-    var formattedAvailabilityList = availabilityList.Select(availability => new
+    return Results.Ok(slots.GroupBy(a => new { a.StartDate, a.EndDate }).Select(group =>
     {
-        id = availability.ID,
-        availability.UserID,
-        startDate = availability.StartDate.ToString("yyyy-MM-dd"),
-        endDate = availability.EndDate.ToString("yyyy-MM-dd"),
-        Days = availability.Days,
-        startTime = availability.StartDate.ToString("HH:mm"),
-        endTime = availability.EndDate.ToString("HH:mm"),
-        availability.IsAvailable
-    }).ToList();
-
-    return Results.Ok(formattedAvailabilityList);
+        var slot = group.First();
+        var date = slot.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var utc = scheduling.ToUtc(slot.StartDate, slot.EndDate);
+        var booked = utc is { } interval && byDate[date].Any(a => a.StartUtc is { } bookedStart
+            ? bookedStart < interval.End && a.EndUtc > interval.Start
+            : Scheduling.OverlapsLegacy(a.Time, slot.StartDate, slot.EndDate));
+        return new
+        {
+            id = slot.ID,
+            startDate = date,
+            startTime = slot.StartDate.ToString("HH:mm", CultureInfo.InvariantCulture),
+            endTime = slot.EndDate.ToString("HH:mm", CultureInfo.InvariantCulture),
+            IsAvailable = utc is { } valid && valid.Start > now && group.All(a => a.IsAvailable)
+                && !blocked[slot.StartDate.Date].Any(a => a.StartDate < slot.EndDate && a.EndDate > slot.StartDate),
+            IsBooked = booked
+        };
+    }));
 });
 
-api.MapPost("/priestavailabilities", async (PriestAvailabilityInput availability, AppDbContext db) => {
-    // Loop through the provided days of availability
-    foreach (var day in availability.Days)
+api.MapPost("/priestavailabilities", async (AvailabilityRequest request, HttpContext context, AppDbContext db, CancellationToken cancellation) =>
+{
+    if (!IsAdmin(context)) return AdminRequired(context);
+
+    var days = request.Days?.Distinct().ToArray() ?? [];
+    if (request.StartDate == default || request.EndDate < request.StartDate
+        || request.EndDate.DayNumber - request.StartDate.DayNumber > 365
+        || request.EndDate.Year >= 9999 || days.Length == 0
+        || days.Any(day => !Enum.GetNames<DayOfWeek>().Contains(day))
+        || request.StartTime < TimeSpan.Zero || request.EndTime > TimeSpan.FromDays(1)
+        || request.StartTime >= request.EndTime
+        || request.StartTime.Ticks % Scheduling.Duration.Ticks != 0
+        || request.EndTime.Ticks % Scheduling.Duration.Ticks != 0)
+        return Results.Problem("Choose valid dates, weekdays, and an increasing interval on half-hour boundaries.", statusCode: 400);
+
+    var start = request.StartDate.ToDateTime(TimeOnly.MinValue);
+    var end = request.EndDate.ToDateTime(TimeOnly.MinValue);
+    var intervals = new List<(DateTime Start, DateTime End)>();
+    for (var date = start; date <= end; date = date.AddDays(1))
     {
-        // Parse the day to get the corresponding DayOfWeek enum value
-        var dayOfWeek = (DayOfWeek)Enum.Parse(typeof(DayOfWeek), day);
-
-        // Check if the day falls between StartDate and EndDate
-        var matchingDate = GetDateForDayOfWeekInRange(availability.StartDate, availability.EndDate, dayOfWeek);
-
-        if (matchingDate == null)
+        if (!days.Contains(date.DayOfWeek.ToString())) continue;
+        for (var time = request.StartTime; time < request.EndTime; time += Scheduling.Duration)
         {
-            // Skip creating availability if the day does not fall within the range
-            Console.WriteLine($"Day {day} does not fall between {availability.StartDate:yyyy-MM-dd} and {availability.EndDate:yyyy-MM-dd}. Skipping.");
+            var slotStart = date + time;
+            var slotEnd = slotStart + Scheduling.Duration;
+            if (request.IsAvailable && scheduling.ToUtc(slotStart, slotEnd) == null)
+                return Results.Problem("Open hours cannot include an ambiguous or skipped daylight-saving time.", statusCode: 400);
+            intervals.Add((slotStart, slotEnd));
+        }
+    }
+
+    if (intervals.Count == 0)
+        return Results.Problem("The selected weekdays do not occur in this date range.", statusCode: 400);
+
+    var user = await CurrentUser(context, db, cancellation);
+    if (user == null) return Results.Unauthorized();
+    await using var transaction = await Scheduling.LockAsync(db, cancellation);
+    var existing = await db.PriestAvailabilities.Where(a => a.StartDate >= start && a.StartDate < end.AddDays(1))
+        .ToListAsync(cancellation);
+    var byInterval = existing.ToLookup(a => (a.StartDate, a.EndDate));
+    var blocked = existing.Where(a => !a.IsAvailable).ToLookup(a => a.StartDate.Date);
+
+    foreach (var interval in intervals)
+    {
+        var exact = byInterval[interval];
+        // A dated block takes precedence over a repeated opening. A single-date
+        // opening can explicitly restore an interval previously blocked.
+        if (request.IsAvailable && request.StartDate != request.EndDate
+            && blocked[interval.Start.Date].Any(a => a.StartDate < interval.End && a.EndDate > interval.Start))
+            continue;
+        if (exact.Any())
+        {
+            foreach (var slot in exact) slot.IsAvailable = request.IsAvailable;
             continue;
         }
-
-        // Loop through the times in 30-minute intervals
-        for (var currentTime = availability.StartTime; currentTime < availability.EndTime; currentTime = currentTime.Add(TimeSpan.FromMinutes(30)))
+        db.PriestAvailabilities.Add(new PriestAvailabilityInput
         {
-            // Create start and end date-times for each slot
-            var slotStartDateTime = matchingDate.Value.Date.Add(currentTime);
-            var slotEndDateTime = slotStartDateTime.Add(TimeSpan.FromMinutes(30));
-
-            Console.WriteLine($"Slot start date and time: {slotStartDateTime}, Slot end date and time: {slotEndDateTime}");
-
-            // Check if an availability for this user, day, and time slot already exists
-            var existingAvailability = await db.PriestAvailabilities
-                .FirstOrDefaultAsync(a => a.UserID == availability.UserID
-                                          && a.StartDate == slotStartDateTime
-                                          && a.EndDate == slotEndDateTime);
-
-            if (existingAvailability != null)
-            {
-                // If the existing availability is false, do not allow changing to true
-                if (!existingAvailability.IsAvailable && availability.IsAvailable)
-                {
-                    // Skip updating from false to true
-                    continue;
-                }
-
-                // If the existing availability has a different status, override it
-                existingAvailability.IsAvailable = availability.IsAvailable;
-                db.PriestAvailabilities.Update(existingAvailability);
-            }
-            else
-            {
-                // If no existing availability, create a new one
-                var slotAvailability = new PriestAvailabilityInput
-                {
-                    UserID = availability.UserID,
-                    StartDate = slotStartDateTime,
-                    EndDate = slotEndDateTime,
-                    Days = new List<string> { day },
-                    StartTime = currentTime,
-                    EndTime = currentTime.Add(TimeSpan.FromMinutes(30)),
-                    IsAvailable = availability.IsAvailable
-                };
-
-                db.PriestAvailabilities.Add(slotAvailability);
-            }
-        }
+            UserID = user.ID,
+            StartDate = interval.Start,
+            EndDate = interval.End,
+            Days = [interval.Start.DayOfWeek.ToString()],
+            StartTime = interval.Start.TimeOfDay,
+            EndTime = interval.Start.TimeOfDay + Scheduling.Duration,
+            IsAvailable = request.IsAvailable,
+        });
     }
 
-    await db.SaveChangesAsync();
-    return Results.Created($"/priestavailabilities/{availability.UserID}", availability);
-});
-
-// Helper function to find the date of a day of the week within a date range
-DateTime? GetDateForDayOfWeekInRange(DateTime startDate, DateTime endDate, DayOfWeek targetDayOfWeek)
-{
-    // Get the first occurrence of the target day after the start date
-    var daysUntilTarget = ((int)targetDayOfWeek - (int)startDate.DayOfWeek + 7) % 7;
-    var targetDate = startDate.AddDays(daysUntilTarget);
-
-    // Check if this date falls within the range of startDate and endDate
-    if (targetDate <= endDate)
-    {
-        return targetDate;
-    }
-
-    // Return null if the day does not fall within the range
-    return null;
-}
-
-api.MapDelete("/priestavailabilities", async (HttpContext context, AppDbContext db) => {
-    if (!IsAdmin(context)) return Results.Unauthorized();
-    db.PriestAvailabilities.RemoveRange(db.PriestAvailabilities);
-    await db.SaveChangesAsync();
+    await db.SaveChangesAsync(cancellation);
+    await transaction.CommitAsync(cancellation);
     return Results.NoContent();
 });
 
-api.MapDelete("/priestavailabilities/{id:int}", async (int id, AppDbContext db) => {
-    var slot = await db.PriestAvailabilities.FindAsync(id);
+api.MapDelete("/priestavailabilities", async (HttpContext context, AppDbContext db, CancellationToken cancellation) =>
+{
+    if (!IsAdmin(context)) return AdminRequired(context);
+    await using var transaction = await Scheduling.LockAsync(db, cancellation);
+    var retained = db.Appointments.Where(a => a.AvailabilityID != null).Select(a => a.AvailabilityID);
+    await db.PriestAvailabilities.Where(a => !retained.Contains(a.ID)).ExecuteDeleteAsync(cancellation);
+    await db.PriestAvailabilities.Where(a => retained.Contains(a.ID))
+        .ExecuteUpdateAsync(update => update.SetProperty(a => a.IsAvailable, false), cancellation);
+    await transaction.CommitAsync(cancellation);
+    return Results.NoContent();
+});
+
+api.MapDelete("/priestavailabilities/{id:int}", async (int id, HttpContext context, AppDbContext db, CancellationToken cancellation) =>
+{
+    if (!IsAdmin(context)) return AdminRequired(context);
+    await using var transaction = await Scheduling.LockAsync(db, cancellation);
+    var slot = await db.PriestAvailabilities.FindAsync([id], cancellation);
     if (slot == null) return Results.NotFound();
-    db.PriestAvailabilities.Remove(slot);
-    await db.SaveChangesAsync();
+    if (await db.Appointments.AnyAsync(a => a.AvailabilityID == id, cancellation))
+        return Results.Conflict();
+    slot.IsAvailable = false;
+    await db.SaveChangesAsync(cancellation);
+    await transaction.CommitAsync(cancellation);
     return Results.NoContent();
-});
-
-// Frontend integration: Example payload for priest availability
-api.MapPost("/priestavailabilities/frontend", async (HttpContext context, AppDbContext db) =>
-{
-    // Reading JSON data from frontend
-    var availabilityData = await context.Request.ReadFromJsonAsync<PriestAvailabilityInput>();
-
-    if (availabilityData == null)
-        return Results.BadRequest("Invalid availability data.");
-
-    var existingAvailability = await db.PriestAvailabilities.FirstOrDefaultAsync(a => a.UserID == availabilityData.UserID);
-
-    if (existingAvailability != null)
-    {
-        // Update existing availability
-        existingAvailability.StartDate = availabilityData.StartDate;
-        existingAvailability.EndDate = availabilityData.EndDate;
-        existingAvailability.Days = availabilityData.Days;
-        existingAvailability.StartTime = availabilityData.StartTime;
-        existingAvailability.EndTime = availabilityData.EndTime;
-        db.PriestAvailabilities.Update(existingAvailability);
-    }
-    else
-    {
-        // Create new availability
-        var newAvailability = new PriestAvailabilityInput
-        {
-            StartDate = availabilityData.StartDate,
-            EndDate = availabilityData.EndDate,
-            Days = availabilityData.Days,
-            StartTime = availabilityData.StartTime,
-            EndTime = availabilityData.EndTime,
-            UserID = availabilityData.UserID
-        };
-
-        db.PriestAvailabilities.Add(newAvailability);
-    }
-
-    await db.SaveChangesAsync();
-    return Results.Created($"/priestavailabilities/{availabilityData.ID}", availabilityData);
 });
 
 api.MapGet("/", () => "Hello World!");
 
-api.MapPost("/appointments", async (HttpContext context, AppDbContext db) =>
+api.MapPost("/appointments", async (AppointmentRequest request, HttpContext context, AppDbContext db, CancellationToken cancellation) =>
 {
-    var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
-    if (string.IsNullOrEmpty(emailClaim)) return Results.Unauthorized();
+    var user = await CurrentUser(context, db, cancellation);
+    if (user == null) return Results.Unauthorized();
+    if (request.AvailabilityId <= 0)
+        return Results.Problem("Choose an appointment time from the calendar.", statusCode: 400);
 
-    var user = await db.Users.SingleOrDefaultAsync(u => u.Email == emailClaim);
-    if (user == null) return Results.NotFound("User not found.");
+    await using var transaction = await Scheduling.LockAsync(db, cancellation);
+    var slot = await db.PriestAvailabilities.FindAsync([request.AvailabilityId], cancellation);
+    if (slot == null || !slot.IsAvailable
+        || scheduling.ToUtc(slot.StartDate, slot.EndDate) is not { } interval
+        || interval.Start <= DateTime.UtcNow)
+        return SlotUnavailable();
 
-    var body = await context.Request.ReadFromJsonAsync<AppointmentRequest>();
-    if (body == null) return Results.BadRequest("Invalid appointment data.");
+    if (await db.PriestAvailabilities.AnyAsync(a => !a.IsAvailable &&
+        a.StartDate < slot.EndDate && a.EndDate > slot.StartDate, cancellation))
+        return SlotUnavailable();
 
-    var appt = new Appointment
+    var date = slot.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var overlaps = await db.Appointments.AnyAsync(a => a.StartUtc < interval.End && a.EndUtc > interval.Start, cancellation);
+    var legacy = await db.Appointments.Where(a => a.StartUtc == null && a.Date == date)
+        .Select(a => new { a.Date, a.Time }).ToListAsync(cancellation);
+    if (overlaps || legacy.Any(a => Scheduling.OverlapsLegacy(a.Time, slot.StartDate, slot.EndDate)))
+        return SlotUnavailable();
+
+    var appointment = new Appointment
     {
         UserID = user.ID,
-        Name = body.Name ?? string.Empty,
-        Location = body.Location ?? string.Empty,
-        Date = body.Date ?? string.Empty,
-        Time = body.Time ?? string.Empty,
+        Name = (user.FirstName + " " + user.LastName).Trim(),
+        Location = Scheduling.Church,
+        Date = date,
+        Time = slot.StartDate.ToString("h:mm tt", CultureInfo.InvariantCulture) + " – "
+            + slot.EndDate.ToString("h:mm tt", CultureInfo.InvariantCulture),
+        AvailabilityID = slot.ID,
+        StartUtc = interval.Start,
+        EndUtc = interval.End,
+        CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
     };
-    db.Appointments.Add(appt);
-    await db.SaveChangesAsync();
-    return Results.Created($"/appointments/{appt.ID}", appt);
+    db.Appointments.Add(appointment);
+    try
+    {
+        await db.SaveChangesAsync(cancellation);
+        await transaction.CommitAsync(cancellation);
+    }
+    catch (DbUpdateException error) when (error.InnerException is PostgresException
+        { ConstraintName: "EX_Appointments_Interval" or "IX_Appointments_AvailabilityID" })
+    {
+        return SlotUnavailable();
+    }
+    return Results.Created($"/api/appointments/{appointment.ID}", appointment);
 });
+
+api.MapDelete("/appointments/{id:int}", async (int id, HttpContext context, AppDbContext db, CancellationToken cancellation) =>
+{
+    var user = await CurrentUser(context, db, cancellation);
+    if (user == null) return Results.Unauthorized();
+    await using var transaction = await Scheduling.LockAsync(db, cancellation);
+    var appointment = await db.Appointments.FirstOrDefaultAsync(a => a.ID == id && a.UserID == user.ID, cancellation);
+    if (appointment == null) return Results.NotFound();
+    db.Appointments.Remove(appointment);
+    await db.SaveChangesAsync(cancellation);
+    await transaction.CommitAsync(cancellation);
+    return Results.NoContent();
+});
+
+static IResult SlotUnavailable() =>
+    Results.Problem("This time is no longer available. Choose another time from the calendar.", statusCode: 409);
+
+static Task<User?> CurrentUser(HttpContext context, AppDbContext db, CancellationToken cancellation)
+{
+    var email = context.User.FindFirstValue(ClaimTypes.Email);
+    return !string.IsNullOrWhiteSpace(email) && context.User.Identity?.IsAuthenticated == true
+        ? db.Users.FirstOrDefaultAsync(u => u.Email == email, cancellation)
+        : Task.FromResult<User?>(null);
+}
+
+static IResult AdminRequired(HttpContext context) => context.User.Identity?.IsAuthenticated == true
+    ? Results.StatusCode(StatusCodes.Status403Forbidden)
+    : Results.Unauthorized();
 
 api.MapGet("/appointments", async (HttpContext context, AppDbContext db) =>
 {
@@ -525,6 +599,8 @@ api.MapGet("/appointments", async (HttpContext context, AppDbContext db) =>
     return Results.Ok(appointments);
 });
 
+api.MapGet("/auth/options", () => Results.Ok(new { demoEnabled, googleConfigured }));
+
 api.MapPost("/logout", async (HttpContext context) =>
 {
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -534,6 +610,11 @@ api.MapPost("/logout", async (HttpContext context) =>
 // Remaining endpoints (user authentication, profiles, meetings, etc.)
 api.MapGet("/login", async (HttpContext context) =>
 {
+    if (!googleConfigured)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
     await context.ChallengeAsync(GoogleDefaults.AuthenticationScheme, new AuthenticationProperties
     {
         RedirectUri = "/api/post-login"
@@ -597,7 +678,8 @@ api.MapGet("/profile", async (HttpContext context, AppDbContext db) =>
         Email = user.Email,
         FirstName = user.FirstName,
         LastName = user.LastName,
-        IsAdmin = IsAdmin(context)
+        IsAdmin = IsAdmin(context),
+        TimeZone = scheduling.TimeZoneId
     };
 
     return Results.Ok(result);
@@ -623,7 +705,8 @@ api.MapPost("/profile", async (HttpContext context, AppDbContext db) =>
         Email = user.Email,
         FirstName = user.FirstName,
         LastName = user.LastName,
-        IsAdmin = IsAdmin(context)
+        IsAdmin = IsAdmin(context),
+        TimeZone = scheduling.TimeZoneId
     };
 
     return Results.Ok(result);
@@ -634,11 +717,7 @@ api.MapPost("/profile", async (HttpContext context, AppDbContext db) =>
 
 api.MapGet("/users", async (HttpContext context, AppDbContext db) =>
 {
-    var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
-    if (emailClaim != "heneinfilobatire@gmail.com")
-    {
-        return Results.Unauthorized();
-    }
+    if (!CanManageAccounts(context)) return AdminRequired(context);
 
     var users = await db.Users.ToListAsync();
     return Results.Ok(users);
@@ -646,11 +725,7 @@ api.MapGet("/users", async (HttpContext context, AppDbContext db) =>
 
 api.MapPut("/users/{id}", async (int id, HttpContext context, User updatedUser, AppDbContext db) =>
 {
-    var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
-    if (emailClaim != "heneinfilobatire@gmail.com")
-    {
-        return Results.Unauthorized();
-    }
+    if (!CanManageAccounts(context)) return AdminRequired(context);
 
     var user = await db.Users.FindAsync(id);
     if (user == null)
@@ -668,11 +743,7 @@ api.MapPut("/users/{id}", async (int id, HttpContext context, User updatedUser, 
 
 api.MapPost("/users/cancel", (HttpContext context) =>
 {
-    var emailClaim = context.User.Claims.FirstOrDefault(c => c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value;
-    if (emailClaim != "heneinfilobatire@gmail.com")
-    {
-        return Results.Unauthorized();
-    }
+    if (!CanManageAccounts(context)) return AdminRequired(context);
 
     // Logic to handle cancel operation
     return Results.Ok("Operation canceled.");
@@ -680,5 +751,7 @@ api.MapPost("/users/cancel", (HttpContext context) =>
 
 app.Run();
 
-record AppointmentRequest(string? Name, string? Location, string? Date, string? Time);
+record AppointmentRequest(int AvailabilityId);
+record AvailabilityRequest(DateOnly StartDate, DateOnly EndDate, string[]? Days,
+    TimeSpan StartTime, TimeSpan EndTime, bool IsAvailable);
 record DemoLoginRequest(string? Role);

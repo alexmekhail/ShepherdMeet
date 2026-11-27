@@ -36,9 +36,11 @@ services:
       - "5209:8080"
     environment:
       PORT: 8080
+      ASPNETCORE_ENVIRONMENT: Development
+      Scheduling__TimeZone: America/Los_Angeles
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=shepherdmeet;Username=postgres;Password=postgres
-      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID}
-      Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
+      Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
       AllowedOrigins: http://localhost:3000
       FrontendUrl: http://localhost:3000
     depends_on:

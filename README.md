@@ -1,235 +1,195 @@
 # ShepherdMeet
 
-A full-stack appointment scheduler for booking one-on-one meetings with a parish priest — Google sign-in, a live availability calendar, and an admin panel for managing open slots.
+ShepherdMeet is a parish scheduling application for 30-minute appointments
+with Father Danial at St. Philopater & St. Demiana Coptic Orthodox Church.
+Parishioners can find a time, review and confirm an appointment, and cancel
+from their appointment dashboard. Schedule administrators can open or block
+hours for a given date or repeat a weekly pattern through a chosen end date.
 
-**Live demo:** [shepherdmeet.vercel.app](https://shepherdmeet.vercel.app) — click **Demo as Parishioner** or **Demo as Priest (Admin)** to sign in instantly, no account needed.
+## Screenshots
 
-> ⏱️ Measured after a genuine 16-minute idle period: first request **~2.5s**, immediate follow-up **~0.27s**. No more 30–60s cold-start wake-up from the old Azure / Render free-tier hosting.
+These captures use a disposable local PostgreSQL database and demo accounts.
 
-![Booking calendar screenshot](docs/screenshot-booking.png)
-<!-- TODO: add a screenshot or short GIF of the booking flow and admin panel -->
+| Desktop booking | Mobile booking |
+| --- | --- |
+| ![Booking calendar with a selected appointment time](docs/booking-desktop.png) | ![Booking calendar and times on a phone](docs/booking-mobile.png) |
 
----
+[Appointment dashboard](docs/appointments-desktop.png) ·
+[Availability editor](docs/availability-desktop.png)
 
-## Features
+## Architecture
 
-- **Google Sign-In** — one-click OAuth 2.0 authentication, no passwords
-- **Instant demo logins** — try the app as a parishioner or as the admin without signing up
-- **Appointment booking** — browse open slots on a calendar and book a 30-minute meeting
-- **Admin panel** — the priest manages availability: add time ranges, block off days, set recurring hours
-- **Role-based views** — admins see the availability manager; everyone else sees the booking calendar
-- **Light / dark mode** — theme toggle with system-preference detection
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React 18, React Router v6 |
-| Backend | ASP.NET Core (.NET 8) Minimal APIs |
-| Database | PostgreSQL (Neon) + Entity Framework Core 8 |
-| Authentication | Google OAuth 2.0 (cookie-based sessions) + demo login |
-| Containerization | Docker, Docker Compose |
-| Hosting | Vercel (container runtime, two services in one project) |
-| CI | GitHub Actions (build + test) |
-
-### Architecture
-
-Frontend and backend deploy as two container-runtime **services** in a single Vercel project, both reachable through one domain: a top-level rewrite sends `/api/*` to the backend and everything else to the frontend, so the browser only ever talks to one origin. That makes the auth cookie first-party (no CORS, no cross-site `SameSite=None`).
+React 18 and React Router render the client with plain CSS and component-local
+state. Create React App builds the static bundle, which nginx serves in the
+frontend container. ASP.NET Core 8 Minimal APIs use Entity Framework Core and
+Npgsql against PostgreSQL 16. The existing Vercel configuration routes
+`/api/*` to the backend and all other paths to the frontend on the same origin.
 
 ```mermaid
 flowchart LR
-    Browser["Browser"]
-    subgraph Vercel["One Vercel project, one domain"]
-        FE["React (nginx)\nservice: frontend"]
-        API["ASP.NET Core API\nservice: backend, path /api/*"]
-    end
-    DB[("PostgreSQL\n(Neon, pooled)")]
-    Google["Google OAuth"]
-
-    Browser -- "loads app (/)" --> FE
-    Browser -- "fetch /api/* (cookies)" --> API
-    API -- "EF Core / Npgsql" --> DB
-    API -- "OAuth redirect" --> Google
+    Client[Browser] -->|React routes| Web[nginx and React]
+    Client -->|JSON and session cookie| API[ASP.NET Core Minimal API]
+    API -->|EF Core and Npgsql| DB[(PostgreSQL)]
+    API -->|Sign-in| Google[Google OAuth]
 ```
 
----
+### Starting point and regression risks
 
-## Project Structure
+The original root rendered the booking calendar or availability editor based on
+the profile response. Appointment history lived in a sidebar. The confirmation
+page posted client-provided appointment fields and then issued a separate slot
+deletion. PostgreSQL had no appointment-to-slot relation or overlap constraint.
+Availability timestamps represented church wall time, while appointment dates
+and times were strings. The old booking UI omitted AM/PM, making some existing
+appointment times ambiguous.
 
-```
-ShepherdMeet/
-├── backend/                  # ASP.NET Core API
-│   ├── Models/                # EF Core entity models
-│   ├── Migrations/            # EF Core database migrations (Postgres)
-│   ├── Program.cs             # Minimal API endpoints & middleware
-│   ├── AppDbContext.cs
-│   ├── ShepherdMeet.csproj
-│   ├── appsettings.json
-│   └── Dockerfile
-├── frontend/                  # React application
-│   ├── src/
-│   │   ├── App.js             # Root component + auth gate + role routing
-│   │   ├── login.js           # Google sign-in + demo-login screen
-│   │   ├── UserForm.js        # Appointment booking calendar
-│   │   ├── PriestAvailabilityForm.js  # Admin availability manager
-│   │   ├── ConfirmationPage.js
-│   │   └── WeeklyAvailabilityForm.js
-│   ├── public/
-│   ├── package.json
-│   └── Dockerfile
-├── docker-compose.yml          # Local dev: both services + Postgres + one-off migrate
-├── vercel.json                 # Vercel services + rewrites (infra-as-code)
-└── .github/workflows/
-    └── ci.yml                  # Build + test on PRs and pushes
-```
+The availability API expanded only the first matching occurrence of each
+weekday in a date range. The weekly form was unreachable, and the editor
+attempted a PUT route the API did not provide. Google sessions used cookies
+with PostgreSQL-backed Data Protection keys. Availability writes did not
+consistently check the administrator allowlist. CI built both projects and
+allowed the frontend test step to pass with zero tests. There was no backend
+test suite.
 
----
+Booking confirmation now requires a slot ID, so frontend and backend need a
+coordinated rollout. Local demo authentication remains available. A hosted
+demo and real appointments require separate databases and deployments.
 
-## Local Development
+## Local development
 
-### Prerequisites
+Install Docker Desktop, or use .NET 8, Node.js 20, npm, and PostgreSQL 16 for
+standalone development.
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download)
-- [Node.js 20+](https://nodejs.org)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop)
-- A Google OAuth Client ID & Secret ([Google Cloud Console](https://console.cloud.google.com)) — optional; the demo logins work without it
-
-### Option A — Docker Compose (recommended)
-
-Spins up the API, the frontend, and a local Postgres container together.
-
-```bash
-git clone https://github.com/alexmekhail/ShepherdMeet.git
-cd ShepherdMeet
-
-cp .env.example .env   # fill in Google credentials, or leave as-is and use demo login
-
+```sh
+cp .env.example .env
 docker compose up --build
 ```
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:5209` (all routes are under `/api`, e.g. `http://localhost:5209/api/health`)
+Open [the local web app](http://localhost:3000). The API listens on port 5209
+and PostgreSQL on port 5433. The Compose migration service runs before the API.
+Local development enables demo sign-in and sample data. Google configuration
+is optional for local demo use.
 
-A one-off `migrate` service applies EF Core migrations before `backend` starts (migrations are never run by the app itself — see [Database](#database)). Demo-account and sample-availability seeding still happens on backend startup; it's idempotent and a no-op once seeded.
+For standalone development, point the API at a **local** database. Pre-create
+the database, then migrate and run the server from the repository root.
 
-### Option B — Run services individually
-
-**Start Postgres** (or point at any local Postgres instance — just match `appsettings.Development.json`):
-```bash
-docker run -d --name shepherdmeet-pg -e POSTGRES_DB=shepherdmeet -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5433:5432 postgres:16-alpine
+```sh
+export ASPNETCORE_ENVIRONMENT=Development
+export PORT=5209
+export ConnectionStrings__DefaultConnection='Host=localhost;Port=5433;Database=shepherdmeet;Username=postgres;Password=postgres'
+dotnet run --project backend -- --migrate
+dotnet run --project backend
 ```
 
-**Backend:**
-```bash
-cd backend
+In another terminal:
 
-# Optional, for real Google sign-in:
-dotnet user-secrets set "Authentication:Google:ClientId" "<your-client-id>"
-dotnet user-secrets set "Authentication:Google:ClientSecret" "<your-client-secret>"
-
-# Apply migrations once (not run automatically — see Database below):
-dotnet run -- --migrate
-
-dotnet run
-```
-
-**Frontend:**
-```bash
+```sh
 cd frontend
-cp .env.example .env          # REACT_APP_API_URL=http://localhost:5209/api
-npm install
+npm ci
 npm start
 ```
 
-### Google OAuth redirect URIs (for local dev)
+### Configuration
 
-Add these to your Google Cloud Console OAuth client:
-- Authorized JavaScript origin: `http://localhost:3000`
-- Authorized redirect URI: `http://localhost:5209/api/signin-google`
+| Setting | Purpose |
+| --- | --- |
+| `ConnectionStrings__DefaultConnection` | Npgsql connection string or PostgreSQL URL. Use the target environment's secret store. |
+| `Authentication__Google__ClientId`, `Authentication__Google__ClientSecret` | Google OAuth credentials. Register `<API origin>/api/signin-google`. |
+| `FrontendUrl`, `AllowedOrigins` | Frontend redirect URL and comma-separated trusted browser origins. |
+| `AdminEmails` | Comma-separated Google account emails authorized to manage the church schedule. Configure before rollout. |
+| `AccountAdminEmails` | Separate comma-separated Google account emails authorized for account management. Defaults to empty. |
+| `Scheduling__TimeZone` | IANA timezone used for the church schedule. Defaults to `America/Los_Angeles`. |
+| `Demo__Enabled` | Defaults on in Development and off elsewhere. Enable only on an isolated demo database. |
+| `REACT_APP_API_URL` | Client build-time API base. Standalone default is `http://localhost:5209/api`; container default is `/api`. |
 
----
+## Authentication and authorization
 
-## Database
+Google OAuth returns users to a cookie session. Production cookies are
+HttpOnly, Secure, and SameSite=Lax. PostgreSQL stores the Data Protection key
+ring so sessions survive across instances. Browser requests with an untrusted
+Origin cannot change state. The API enforces the administrator allowlist for
+schedule changes and scopes appointment reads and cancellation to the signed-in
+owner. All `/api/users` endpoints require explicit membership in
+`AccountAdminEmails`. Schedule administrator access alone grants no account
+permissions. The public calendar returns times and booking states without appointment
+owners or attendee details.
 
-PostgreSQL via Entity Framework Core, hosted on [Neon](https://neon.tech)'s free tier, connected through Neon's **pooled** (PgBouncer) endpoint — the hostname containing `-pooler` — so bursts of connections from a cold-started container don't exhaust Neon's connection limit. The Npgsql pool itself is sized small (`MaxPoolSize=10`, `MinPoolSize=0`) since each container instance keeps its own pool.
+Development and isolated demos support preseeded parishioner and admin
+sessions. Demo accounts share their data with other visitors to that demo.
+Disabling demo mode blocks demo sign-in and invalidates demo sessions. Demo
+administrators can edit the demo schedule. They have no access to the account
+management endpoints.
 
-Migrations are **not** applied on backend startup — a container that's cold-starting shouldn't also be blocked on schema work. Apply them as an explicit step instead, against `ConnectionStrings__DefaultConnection`:
-```bash
-dotnet ShepherdMeet.dll --migrate
+## Booking integrity and time handling
+
+The server reads the selected availability record, derives attendee and
+appointment fields, and validates the date, duration, and any blocks. Booking,
+cancellation, and availability writes serialize inside a transaction through a
+PostgreSQL advisory lock on the shared schedule. A unique slot index and a
+PostgreSQL exclusion constraint enforce the database invariant for new bookings.
+Half-open intervals allow a new appointment to start when another ends. A race
+or stale selection receives HTTP 409. Cancellation removes the appointment
+while retaining the original slot and any administrator block.
+
+Availability is entered and displayed in church local time. New appointments
+store the exact start and end instants as PostgreSQL timestamps with time zone.
+Opening hours that include skipped or ambiguous daylight-saving times are
+rejected. Bounded weekly hours expand into dated slots, and dated blocks take
+precedence over repeated openings. Open a single date explicitly to restore
+blocked intervals on that date.
+
+### Migration and rollout
+
+`20261127180000_ProtectAppointmentSlots` adds nullable metadata so legacy rows
+remain readable. The new constraints cover rows with a slot reference and UTC
+interval. Legacy start times without AM/PM are treated as potentially matching
+either interpretation. Unknown legacy times conservatively block that date
+until reconciled. A canceled legacy appointment releases any matching existing
+slots. If the old confirmation flow deleted its slot, an administrator must
+open that time again.
+
+Apply the migration to a backed-up staging database first and check upcoming
+legacy bookings. Run the migration explicitly with `dotnet ShepherdMeet.dll
+--migrate`. Pause booking writes during the schema and frontend/API transition
+so the previous API cannot keep inserting legacy rows. The down migration
+drops the new links and instants, so retain a database backup for rollback.
+
+## Tests
+
+```sh
+cd frontend
+npm ci
+npm test -- --watchAll=false --runInBand
+npx --no-install eslint src --ext .js
+CI=true npm run build
 ```
-(`docker-compose.yml`'s `migrate` service runs exactly this before `backend` starts, for local dev.)
 
-To create a new migration after model changes:
-```bash
-cd backend
-dotnet ef migrations add <MigrationName>
+The frontend uses JavaScript. There is no TypeScript project to check.
+
+```sh
+dotnet restore ShepherdMeet.sln
+dotnet build ShepherdMeet.sln --no-restore
 ```
 
-### Demo data
+Start a fresh disposable PostgreSQL database, apply migrations, then run the
+API in Development. Run the HTTP integration suite and the direct database
+assertions. To verify concurrency across instances, point
+`SHEPHERDMEET_SECOND_TEST_URL` at a second API process on the same database.
 
-On first boot, the backend seeds:
-- Randomized priest availability slots through the end of the year
-- Two demo accounts (parishioner + admin) with no personal data
-- A couple of sample appointments for the demo parishioner
+```sh
+SHEPHERDMEET_TEST_URL=http://localhost:5209/api python3 tests/scheduling_integration.py
+psql -h localhost -p 5433 -U postgres -d shepherdmeet_test -f tests/appointment_constraints.sql
+```
 
----
+The HTTP tests cover competing bookings, owner-only cancellation, rebooking,
+privacy, permission failures, API validation, DST boundaries, midnight, and
+availability overrides. The SQL assertions directly verify PostgreSQL rejects
+overlapping intervals with different slot IDs and invalid durations. GitHub
+Actions runs these tests against its own PostgreSQL service.
 
-## Deployment
+## Possible extensions
 
-Hosting is defined as code in [`vercel.json`](vercel.json): one Vercel project with two container-runtime **services**,
-routed through a single domain via rewrites —
-
-- **`backend`** — built from `backend/Dockerfile`, reachable at `/api/*`. Vercel's container-runtime services forward the request path as-is (no path-stripping transform like framework-native functions get), so every ASP.NET route is itself grouped under `/api` (`app.MapGroup("/api")` in [Program.cs](backend/Program.cs)) to match.
-- **`frontend`** — built from `frontend/Dockerfile` (nginx), reachable at everything else
-
-Because both services share one domain, the frontend and API are **same-origin** in production — no CORS, no cross-site cookies. This also removes the old circular "URLs are only known after the first deploy" problem: the frontend's API base URL is just the relative path `/api`, baked into [frontend/Dockerfile](frontend/Dockerfile) as a build `ARG` default (**not** a Vercel project env var — Create React App bakes `REACT_APP_API_URL` in at `npm run build` time, and Vercel's container builder doesn't pass project env vars through as Docker build-args, so setting it in the Vercel dashboard has no effect).
-
-The auth cookie's encryption key (ASP.NET's DataProtection key ring) is persisted to Postgres (`PersistKeysToDbContext` in [Program.cs](backend/Program.cs)), not left at its ephemeral per-instance default — otherwise a cookie issued by one container instance fails to decrypt on another once the platform scales out or recycles an instance, which surfaced as logins that worked once and then randomly 401'd.
-
-Vercel deploys from Git automatically; there's no deploy step in CI.
-
-### Setup checklist (one-time, manual)
-
-1. **Create a Neon project** at [neon.tech](https://neon.tech) if you haven't, and copy its **pooled** connection string (the `-pooler` hostname variant, `postgres://...`).
-2. **Run migrations once** against that connection string (`dotnet ShepherdMeet.dll --migrate` — see [Database](#database)). Re-run after any migration that ships in a later deploy.
-3. **In Vercel**, import this repo as a new project (it reads `vercel.json` automatically) and set, as project env vars:
-   | Env var | Value |
-   |---|---|
-   | `ConnectionStrings__DefaultConnection` | the Neon pooled connection string |
-   | `FrontendUrl` | empty string — post-login redirects to `/` (root-relative; always correct, same-origin) |
-   | `Authentication__Google__ClientId` / `...ClientSecret` | optional, only for real Google sign-in |
-   | `AdminEmails` | optional, only to override the built-in admin list |
-
-   `REACT_APP_API_URL` is **not** set here — it's baked into the frontend Docker image at build time (see above), and a Vercel project env var of that name has no effect.
-4. (Optional) For real Google sign-in in production, add the deployed domain as an authorized JavaScript origin and `<domain>/api/signin-google` as an authorized redirect URI in the Google Cloud Console.
-
-### Environment Variables
-
-**Backend**
-
-| Variable | Description | Default |
-|---|---|---|
-| `ConnectionStrings__DefaultConnection` | Postgres connection string — use Neon's **pooled** URI in production (accepts a native Npgsql string too) | — |
-| `PORT` | Port Kestrel binds to | set automatically by the hosting platform |
-| `Authentication__Google__ClientId` / `...ClientSecret` | Google OAuth credentials (optional) | — |
-| `AllowedOrigins` | Comma-separated CORS origins (only exercised by cross-origin local dev; same-origin in production) | `http://localhost:3000` |
-| `FrontendUrl` | Post-login redirect base URL — set to an empty string in production (root-relative redirect, same-origin) | `http://localhost:3000` |
-| `AdminEmails` | Comma-separated emails with admin access | two real admin emails + the seeded demo admin |
-
-**Frontend**
-
-Not a runtime env var — Create React App bakes `REACT_APP_API_URL` into the JS bundle at Docker build time, and Vercel's container builder doesn't pass project env vars through as build-args. It's a build `ARG` in [frontend/Dockerfile](frontend/Dockerfile):
-
-| Variable | Description | Default (used in production) |
-|---|---|---|
-| `REACT_APP_API_URL` | Backend API base URL, baked in at `npm run build` time | `/api` |
-
-Override it locally with `docker build --build-arg REACT_APP_API_URL=... ` or (what `docker-compose.yml` does) the Compose `args:` key, if the backend isn't at the same origin — e.g. local dev uses `http://localhost:5209/api`.
-
----
-
-## Hosting history
-
-This app originally ran on **Azure Container Apps** with images built and pushed to **Azure Container Registry** via GitHub Actions, backed by SQLite on an Azure Files mount. It then moved to **Render + Neon Postgres** to bring hosting cost down to $0/month, and has since moved again to **Vercel's container runtime + Neon Postgres** — same $0/month cost, but without Render free-tier's cold-start sleep. The app is no longer in active production use; it exists as a portfolio piece.
+Priest selection would require a priest directory and a schedule attached to
+each priest, with the overlap constraint scoped accordingly. Indefinite
+recurrence would require a stored rule and exception model. Both should be
+designed before adding controls for them.

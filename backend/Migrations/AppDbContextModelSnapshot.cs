@@ -49,12 +49,18 @@ namespace MinimalApiProject.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("ID"));
 
+                    b.Property<int?>("AvailabilityID")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("Date")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("EndUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Location")
                         .IsRequired()
@@ -64,6 +70,9 @@ namespace MinimalApiProject.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("StartUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Time")
                         .IsRequired()
                         .HasColumnType("text");
@@ -72,6 +81,9 @@ namespace MinimalApiProject.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("ID");
+
+                    b.HasIndex("AvailabilityID")
+                        .IsUnique();
 
                     b.ToTable("Appointments");
                 });
@@ -213,6 +225,13 @@ namespace MinimalApiProject.Migrations
                     b.HasKey("ID");
 
                     b.ToTable("Users");
+                });
+            modelBuilder.Entity("MinimalApiProject.Models.Appointment", b =>
+                {
+                    b.HasOne("MinimalApiProject.Models.PriestAvailabilityInput", null)
+                        .WithMany()
+                        .HasForeignKey("AvailabilityID")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 #pragma warning restore 612, 618
         }

@@ -1,166 +1,78 @@
-import React, { useState, useEffect } from 'react';
-import './UserForm.css';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api, CHURCH, churchToday, dateLabel, slotLabel } from './schedule';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209/api';
-
-const UserForm = ({ profile }) => {
-  const [availabilities, setAvailabilities] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedDay, setSelectedDay] = useState(null);
+export default function UserForm({ profile }) {
+  const [month, setMonth] = useState(() => new Date(churchToday(profile.timeZone) + 'T12:00:00Z'));
+  const [day, setDay] = useState('');
+  const [selected, setSelected] = useState(null);
+  const [slots, setSlots] = useState(null);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
+  const first = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
+  const days = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0)).getUTCDate();
+  const monthKey = first.toISOString().slice(0, 7);
 
-  const fetchAvailabilities = async () => {
-    try {
-      const response = await fetch(`${API_URL}/priestavailabilities`);
-      if (response.ok) {
-        const data = await response.json();
-        setAvailabilities(data);
-      } else {
-        console.error('Error:', response.statusText);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  function load(signal) {
+    setError('');
+    api('/priestavailabilities', { signal }).then(setSlots).catch((err) => {
+      if (err.name !== 'AbortError') setError(err.message);
+    });
+  }
 
   useEffect(() => {
-    fetchAvailabilities();
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const daysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
+  function changeMonth(offset) {
+    setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + offset, 1)));
+    setDay('');
+    setSelected(null);
+  }
 
-  const handleDayClick = (day) => {
-    setSelectedDay(day);
-  };
+  const daySlots = (slots || []).filter((slot) => slot.startDate === day);
 
-  const handlePrevMonth = () => {
-    if (selectedMonth === 0) {
-      setSelectedMonth(11);
-      setSelectedYear(selectedYear - 1);
-    } else {
-      setSelectedMonth(selectedMonth - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (selectedMonth === 11) {
-      setSelectedMonth(0);
-      setSelectedYear(selectedYear + 1);
-    } else {
-      setSelectedMonth(selectedMonth + 1);
-    }
-  };
-
-  const formatTime = (timeString) => {
-    if (!timeString) return '';
-
-    const [hour, minute] = timeString.split(':');
-    const hourInt = parseInt(hour, 10);
-    const hour12 = hourInt % 12 || 12;
-    return `${hour12}:${minute}`;
-  };
-
-  // Parse date parts directly from "yyyy-MM-dd" string to avoid timezone shifts
-  const parseDate = (dateStr) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    return { year, month: month - 1, day }; // month is 0-indexed
-  };
-
-  const isAvailableDay = (day) => {
-    return availabilities.some((availability) => {
-      const { year, month, day: aDay } = parseDate(availability.startDate);
-      return aDay === day && month === selectedMonth && year === selectedYear;
-    });
-  };
-
-  const handleTimeSlotClick = (availability) => {
-    const mm = String(selectedMonth + 1).padStart(2, '0');
-    const dd = String(selectedDay).padStart(2, '0');
-    navigate('/confirmation', {
-      state: {
-        availabilityId: availability.id,
-        name: `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim(),
-        location: 'St. Philopater & St. Demiana Coptic Orthodox Church',
-        date: `${selectedYear}-${mm}-${dd}`,
-        time: `${formatTime(availability.startTime)} - ${formatTime(availability.endTime)}`,
-      },
-    });
-  };
-
-  const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1).getDay();
-
-  return (
-    <div className="boujee-container">
-      <h2>Schedule a meeting with Father Danial</h2>
-      {loading ? (
-        <div className="loader">Loading...</div>
-      ) : (
-        <>
-          <div className="calendar-header">
-            <button className="month-nav" onClick={handlePrevMonth}>◀</button>
-            <h3>{new Date(selectedYear, selectedMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}</h3>
-            <button className="month-nav" onClick={handleNextMonth}>▶</button>
-          </div>
-
-          <div className="weekdays">
-            {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => (
-              <div key={day} className="weekday">
-                {day}
-              </div>
-            ))}
-          </div>
-
-          <div className="calendar-grid">
-            {Array.from({ length: firstDayOfMonth }).map((_, index) => (
-              <div key={index} className="empty-day"></div>
-            ))}
-
-            {Array.from({ length: daysInMonth(selectedMonth, selectedYear) }, (_, day) => (
-              <div
-                key={day + 1}
-                className={`calendar-day ${selectedDay === day + 1 ? 'selected' : ''}
-                ${isAvailableDay(day + 1) ? 'available' : ''}`}
-                onClick={() => handleDayClick(day + 1)}
-              >
-                {day + 1}
-              </div>
-            ))}
-          </div>
-
-          {selectedDay && (
-            <div className="availability-details">
-              <h3>
-                Available Appointments on {selectedDay}{' '}
-                {new Date(selectedYear, selectedMonth).toLocaleString('default', { month: 'long' })}{' '}
-                {selectedYear}
-              </h3>
-              <div className="time-slots">
-                {availabilities
-                  .filter((availability) => {
-                    const { year, month, day } = parseDate(availability.startDate);
-                    return day === selectedDay && month === selectedMonth && year === selectedYear;
-                  })
-                  .map((availability) => (
-                    <button
-                      key={availability.id}
-                      className="time-slot-btn"
-                      onClick={() => handleTimeSlotClick(availability)}
-                    >
-                      {formatTime(availability.startTime)} - {formatTime(availability.endTime)}
-                    </button>
-                  ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
+  return <>
+    <header className="page-heading"><div><h1>Book a meeting</h1><p>Choose a date and time for a 30-minute appointment.</p></div></header>
+    <p className="priest-line"><strong>Father Danial</strong><span>{CHURCH}</span></p>
+    <div className="booking-layout">
+      <section className="panel">
+        <div className="calendar-toolbar">
+          <h2 aria-live="polite">{dateLabel(monthKey + '-01', { month: 'long', year: 'numeric' })}</h2>
+          <div><button className="secondary" aria-label="Previous month" onClick={() => changeMonth(-1)}>‹</button>
+            <button className="secondary" aria-label="Next month" onClick={() => changeMonth(1)}>›</button></div>
+        </div>
+        {error && <p className="error" role="alert">{error} <button className="secondary" onClick={() => load()}>Retry</button></p>}
+        {!slots && !error && <p role="status">Loading availability…</p>}
+        {slots && <div className="calendar">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => <span key={label}>{label}</span>)}
+          {Array.from({ length: first.getUTCDay() }, (_, i) => <span key={'blank-' + i} />)}
+          {Array.from({ length: days }, (_, i) => {
+            const date = monthKey + '-' + String(i + 1).padStart(2, '0');
+            const available = slots.some((slot) => slot.startDate === date && slot.isAvailable && !slot.isBooked);
+            return <button key={date} className={available ? 'day available' : 'day'} aria-pressed={day === date}
+              aria-label={dateLabel(date) + (available ? ', times available' : ', no open times')}
+              onClick={() => { setDay(date); setSelected(null); }}>{i + 1}</button>;
+          })}
+        </div>}
+      </section>
+      <section className="panel">
+        <h2>Appointment times</h2>
+        <p className="muted">{profile.timeZone}</p>
+        {!day && <p className="muted">Choose a date on the calendar.</p>}
+        {day && <p><strong>{dateLabel(day)}</strong></p>}
+        {day && !daySlots.length && <p className="muted">No times are listed for this date.</p>}
+        <div className="time-options">{daySlots.map((slot) => (
+          <button className={slot.isBooked ? 'secondary booked-time' : 'secondary'} key={slot.id}
+            disabled={!slot.isAvailable || slot.isBooked}
+            aria-pressed={selected?.id === slot.id} onClick={() => setSelected(slot)}>
+            {slotLabel(slot)}{slot.isBooked ? ' · Booked' : !slot.isAvailable ? ' · Unavailable' : ''}
+          </button>
+        ))}</div>
+        <button className="button review-button" disabled={!selected} onClick={() => navigate('/confirmation', { state: selected })}>Review appointment</button>
+      </section>
     </div>
-  );
-};
-
-export default UserForm;
+  </>;
+}

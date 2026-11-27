@@ -2,10 +2,25 @@ import React, { useEffect, useState } from 'react';
 import './Login.css';
 import logo from './spsdlogo.png';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5209/api';
+import { API_URL, api } from './schedule';
 
 const Login = ({ onAuthenticated }) => {
   const [demoLoading, setDemoLoading] = useState(null);
+  const [error, setError] = useState('');
+  const [options, setOptions] = useState(null);
+
+  function loadOptions(signal) {
+    setError('');
+    api('/auth/options', { signal }).then(setOptions).catch((err) => {
+      if (err.name !== 'AbortError') setError('Sign-in options could not be loaded.');
+    });
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadOptions(controller.signal);
+    return () => controller.abort();
+  }, []);
 
   const handleGoogleSignIn = () => {
     window.location.href = `${API_URL}/login`;
@@ -13,6 +28,7 @@ const Login = ({ onAuthenticated }) => {
 
   const handleDemoLogin = async (role) => {
     setDemoLoading(role);
+    setError('');
     try {
       const response = await fetch(`${API_URL}/auth/demo-login`, {
         method: 'POST',
@@ -20,47 +36,26 @@ const Login = ({ onAuthenticated }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role }),
       });
-      if (response.ok) {
-        onAuthenticated();
-      }
-    } catch (error) {
-      console.error('Demo login failed:', error);
+      if (!response.ok) throw new Error();
+      await onAuthenticated();
+    } catch {
+      setError('Demo sign-in failed. Please try again.');
     } finally {
       setDemoLoading(null);
     }
   };
 
-  useEffect(() => {
-    const checkLoginStatus = async () => {
-      try {
-        const response = await fetch(`${API_URL}/profile`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const profile = await response.json();
-          if (profile && profile.email) {
-            onAuthenticated();
-          }
-        }
-      } catch (error) {
-        console.error('Error checking login status:', error);
-      }
-    };
-
-    const intervalId = setInterval(checkLoginStatus, 2000);
-
-    return () => clearInterval(intervalId);
-  }, [onAuthenticated]);
-
   return (
-    <div className="login-container">
-      <img src={logo} alt="Logo" className="logo" style={{ width: '300px', height: 'auto' }} />
-      <h2>ShepherdMeet: Schedule a Meeting</h2>
+    <main className="login-container">
+      <img src={logo} alt="St. Philopater and St. Demiana Church" className="logo" />
+      <h1>ShepherdMeet</h1>
+      <p className="muted">Schedule a meeting with your parish priest.</p>
+      {error && <p className="error" role="alert">{error}</p>}
 
-      <button className="gsi-material-button" style={{ width: '400px', padding: '16px' }} onClick={handleGoogleSignIn}>
-        <div className="gsi-material-button-state"></div>
+      {!options && !error && <p role="status">Loading sign-in options…</p>}
+      {!options && error && <button className="secondary" onClick={() => loadOptions()}>Retry</button>}
+      {options && !options.googleConfigured && !options.demoEnabled && <p>Sign-in is currently unavailable.</p>}
+      {options?.googleConfigured && <button className="gsi-material-button" onClick={handleGoogleSignIn}>
         <div className="gsi-material-button-content-wrapper">
           <div className="gsi-material-button-icon">
             <svg
@@ -77,13 +72,12 @@ const Login = ({ onAuthenticated }) => {
               <path fill="none" d="M0 0h48v48H0z"></path>
             </svg>
           </div>
-          <span className="gsi-material-button-contents" style={{ fontSize: '18px' }}>Sign in with Google</span>
-          <span style={{ display: 'none' }}>Sign in with Google</span>
+          <span className="gsi-material-button-contents">Sign in with Google</span>
         </div>
-      </button>
+      </button>}
 
-      <div className="demo-section">
-        <div className="demo-divider">or try it instantly</div>
+      {options?.demoEnabled && <div className="demo-section">
+        {options.googleConfigured && <div className="demo-divider">or try the demo</div>}
         <button
           className="demo-button"
           onClick={() => handleDemoLogin('parishioner')}
@@ -98,8 +92,8 @@ const Login = ({ onAuthenticated }) => {
         >
           {demoLoading === 'admin' ? 'Signing in…' : 'Demo as Priest (Admin)'}
         </button>
-      </div>
-    </div>
+      </div>}
+    </main>
   );
 };
 
