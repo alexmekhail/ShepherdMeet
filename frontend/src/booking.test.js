@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import UserForm from './UserForm';
 import ConfirmationPage from './ConfirmationPage';
 import AppointmentConfirmed from './AppointmentConfirmed';
+import PriestAvailabilityForm from './PriestAvailabilityForm';
 import { churchToday, slotLabel } from './schedule';
 
 const profile = { timeZone: 'America/Los_Angeles' };
@@ -15,7 +16,7 @@ test('dates and slot labels use the church date and explicit AM/PM', () => {
   expect(slotLabel({ startTime: '23:30', endTime: '00:00' })).toBe('11:30 PM – 12:00 AM');
 });
 
-describe('booking calendar', () => {
+describe('scheduling UI', () => {
   let container;
   let root;
   const originalFetch = global.fetch;
@@ -77,5 +78,26 @@ describe('booking calendar', () => {
     await openCalendar(409);
     expect(container.querySelector('[role="alert"]').textContent).toContain('no longer available');
     expect(container.querySelector('a').textContent).toBe('Back to calendar');
+  });
+
+  test('submits midnight as the end of the selected day', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, status: 204 })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+    await act(async () => root.render(<PriestAvailabilityForm profile={profile} />));
+
+    container.querySelector('[name="startTime"]').value = '23:30';
+    container.querySelector('[name="endTime"]').value = '00:00';
+    await act(async () => button('Save schedule').click());
+
+    expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toMatchObject({
+      startDate: today,
+      endDate: today,
+      startTime: '23:30:00',
+      endTime: '1.00:00:00',
+      isAvailable: true,
+    });
+    expect(container.querySelector('[role="status"]').textContent).toBe('Schedule updated.');
   });
 });

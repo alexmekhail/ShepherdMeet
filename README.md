@@ -136,17 +136,20 @@ store the exact start and end instants as PostgreSQL timestamps with time zone.
 Opening hours that include skipped or ambiguous daylight-saving times are
 rejected. Bounded weekly hours expand into dated slots, and dated blocks take
 precedence over repeated openings. Open a single date explicitly to restore
-blocked intervals on that date.
+blocked intervals on that date. An opening must cover an entire off-grid legacy
+block to replace it. Partial overlaps, blocks that cross midnight, and blocks
+linked to an appointment return a conflict and leave the schedule unchanged.
 
 ### Migration and rollout
 
 `20261127180000_ProtectAppointmentSlots` adds nullable metadata so legacy rows
 remain readable. The new constraints cover rows with a slot reference and UTC
 interval. Legacy start times without AM/PM are treated as potentially matching
-either interpretation. Unknown legacy times conservatively block that date
+either interpretation, including overlaps across midnight. Unknown legacy times
+conservatively block the recorded date and the start of the following day
 until reconciled. A canceled legacy appointment releases any matching existing
-slots. If the old confirmation flow deleted its slot, an administrator must
-open that time again.
+slots. If the old confirmation flow deleted its slot, an administrator must open
+that time again.
 
 Apply the migration to a backed-up staging database first and check upcoming
 legacy bookings. Run the migration explicitly with `dotnet ShepherdMeet.dll
@@ -175,10 +178,13 @@ Start a fresh disposable PostgreSQL database, apply migrations, then run the
 API in Development. Run the HTTP integration suite and the direct database
 assertions. To verify concurrency across instances, point
 `SHEPHERDMEET_SECOND_TEST_URL` at a second API process on the same database.
+Set the PostgreSQL client variables to match that disposable database so the
+suite can insert legacy fixtures. Without `PGDATABASE`, those tests are skipped.
 
 ```sh
+export PGHOST=localhost PGPORT=5433 PGUSER=postgres PGDATABASE=shepherdmeet_test
 SHEPHERDMEET_TEST_URL=http://localhost:5209/api python3 tests/scheduling_integration.py
-psql -h localhost -p 5433 -U postgres -d shepherdmeet_test -f tests/appointment_constraints.sql
+psql -f tests/appointment_constraints.sql
 ```
 
 The HTTP tests cover competing bookings, owner-only cancellation, rebooking,

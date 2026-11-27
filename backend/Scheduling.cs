@@ -25,8 +25,23 @@ internal sealed class Scheduling(string timeZoneId)
         return endUtc - startUtc == Duration ? (startUtc, endUtc) : null;
     }
 
-    public static bool OverlapsLegacy(string time, DateTime start, DateTime end)
+    public static string DateKey(DateTime date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    public static DateTime[] OverlappingDates(DateTime start, DateTime end)
     {
+        var date = start.Date;
+        // A 30-minute slot can overlap a prior-day booking or spill into the following day.
+        return end.Date > date && end.TimeOfDay != TimeSpan.Zero
+            ? [date.AddDays(-1), date, end.Date]
+            : [date.AddDays(-1), date];
+    }
+
+    public static bool OverlapsLegacy(string date, string time, DateTime start, DateTime end)
+    {
+        if (!DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var legacyDate))
+            return false;
+
         var oldStart = time.Split(" - ", 2)[0].Trim();
         if (DateTime.TryParseExact(oldStart, ["h:mm tt", "hh:mm tt"], CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var explicitTime))
@@ -39,13 +54,13 @@ internal sealed class Scheduling(string timeZoneId)
             return Overlaps(morning) || Overlaps(morning + TimeSpan.FromHours(12));
         }
 
-        // Unknown legacy values require operator reconciliation before reuse.
-        return true;
+        // An unknown start can occupy its whole recorded date and spill into the next day.
+        return legacyDate < end && start - legacyDate < TimeSpan.FromDays(1) + Duration;
 
         bool Overlaps(TimeSpan timeOfDay)
         {
-            var legacyStart = start.Date + timeOfDay;
-            return legacyStart < end && legacyStart + Duration > start;
+            var legacyStart = legacyDate + timeOfDay;
+            return legacyStart < end && start - legacyStart < Duration;
         }
     }
 

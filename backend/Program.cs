@@ -373,8 +373,9 @@ api.MapPost("/auth/demo-login", async (HttpContext context, AppDbContext db, Dem
 api.MapGet("/priestavailabilities", async (AppDbContext db, CancellationToken cancellation) =>
 {
     var today = scheduling.Today;
-    var earliest = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-    var slots = await db.PriestAvailabilities.Where(a => a.StartDate >= today)
+    var earliest = Scheduling.DateKey(today.AddDays(-1));
+    var slots = await db.PriestAvailabilities
+        .Where(a => a.StartDate >= today || (!a.IsAvailable && a.EndDate > today))
         .OrderBy(a => a.StartDate).ThenBy(a => a.ID).ToListAsync(cancellation);
     var appointments = await db.Appointments.Where(a => string.Compare(a.Date, earliest) >= 0)
         .Select(a => new { a.Date, a.Time, a.StartUtc, a.EndUtc }).ToListAsync(cancellation);
@@ -382,14 +383,17 @@ api.MapGet("/priestavailabilities", async (AppDbContext db, CancellationToken ca
     var blocked = slots.Where(a => !a.IsAvailable).ToLookup(a => a.StartDate.Date);
     var now = DateTime.UtcNow;
 
-    return Results.Ok(slots.GroupBy(a => new { a.StartDate, a.EndDate }).Select(group =>
+    return Results.Ok(slots.Where(a => a.StartDate >= today)
+        .GroupBy(a => new { a.StartDate, a.EndDate }).Select(group =>
     {
         var slot = group.First();
-        var date = slot.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var date = Scheduling.DateKey(slot.StartDate);
         var utc = scheduling.ToUtc(slot.StartDate, slot.EndDate);
-        var booked = utc is { } interval && byDate[date].Any(a => a.StartUtc is { } bookedStart
-            ? bookedStart < interval.End && a.EndUtc > interval.Start
-            : Scheduling.OverlapsLegacy(a.Time, slot.StartDate, slot.EndDate));
+        var nearbyDates = Scheduling.OverlappingDates(slot.StartDate, slot.EndDate);
+        var booked = utc is { } interval && nearbyDates.SelectMany(day => byDate[Scheduling.DateKey(day)])
+            .Any(a => a.StartUtc is { } bookedStart
+                ? bookedStart < interval.End && a.EndUtc > interval.Start
+                : Scheduling.OverlapsLegacy(a.Date, a.Time, slot.StartDate, slot.EndDate));
         return new
         {
             id = slot.ID,
@@ -397,7 +401,8 @@ api.MapGet("/priestavailabilities", async (AppDbContext db, CancellationToken ca
             startTime = slot.StartDate.ToString("HH:mm", CultureInfo.InvariantCulture),
             endTime = slot.EndDate.ToString("HH:mm", CultureInfo.InvariantCulture),
             IsAvailable = utc is { } valid && valid.Start > now && group.All(a => a.IsAvailable)
-                && !blocked[slot.StartDate.Date].Any(a => a.StartDate < slot.EndDate && a.EndDate > slot.StartDate),
+                && !nearbyDates.SelectMany(day => blocked[day])
+                    .Any(a => a.StartDate < slot.EndDate && a.EndDate > slot.StartDate),
             IsBooked = booked
         };
     }));
@@ -440,10 +445,40 @@ api.MapPost("/priestavailabilities", async (AvailabilityRequest request, HttpCon
     var user = await CurrentUser(context, db, cancellation);
     if (user == null) return Results.Unauthorized();
     await using var transaction = await Scheduling.LockAsync(db, cancellation);
-    var existing = await db.PriestAvailabilities.Where(a => a.StartDate >= start && a.StartDate < end.AddDays(1))
+    var existing = await db.PriestAvailabilities
+        .Where(a => a.StartDate < end.AddDays(1) && (a.StartDate >= start || (!a.IsAvailable && a.EndDate > start)))
         .ToListAsync(cancellation);
     var byInterval = existing.ToLookup(a => (a.StartDate, a.EndDate));
     var blocked = existing.Where(a => !a.IsAvailable).ToLookup(a => a.StartDate.Date);
+
+    if (request.IsAvailable && start == end)
+    {
+        var openingStart = start + request.StartTime;
+        var openingEnd = start + request.EndTime;
+        var legacyBlocks = existing.Where(a => !a.IsAvailable && a.StartDate < openingEnd && a.EndDate > openingStart
+            && (a.EndDate - a.StartDate != Scheduling.Duration
+                || a.StartDate.TimeOfDay.Ticks % Scheduling.Duration.Ticks != 0)).ToArray();
+
+        if (legacyBlocks.Any(a => a.StartDate < start || a.EndDate > start.AddDays(1)))
+            return Results.Problem("An older block crosses midnight and must be reconciled before opening these hours.",
+                statusCode: 409);
+
+        if (legacyBlocks.Any(a => a.StartDate < openingStart || a.EndDate > openingEnd))
+            return Results.Problem("The opening overlaps an older block. Choose an interval that covers the whole block.",
+                statusCode: 409);
+
+        if (legacyBlocks.Length > 0)
+        {
+            var blockIds = legacyBlocks.Select(a => a.ID).ToArray();
+            if (await db.Appointments.AnyAsync(a => a.AvailabilityID.HasValue
+                && blockIds.Contains(a.AvailabilityID.Value), cancellation))
+                return Results.Problem("An older block in this interval is linked to an appointment. Reconcile that appointment before reopening the interval.",
+                    statusCode: 409);
+
+            // Replace contained, unreferenced off-grid blocks with the requested half-hour slots.
+            db.PriestAvailabilities.RemoveRange(legacyBlocks);
+        }
+    }
 
     foreach (var interval in intervals)
     {
@@ -451,7 +486,8 @@ api.MapPost("/priestavailabilities", async (AvailabilityRequest request, HttpCon
         // A dated block takes precedence over a repeated opening. A single-date
         // opening can explicitly restore an interval previously blocked.
         if (request.IsAvailable && request.StartDate != request.EndDate
-            && blocked[interval.Start.Date].Any(a => a.StartDate < interval.End && a.EndDate > interval.Start))
+            && blocked[interval.Start.Date].Concat(blocked[interval.Start.Date.AddDays(-1)])
+                .Any(a => a.StartDate < interval.End && a.EndDate > interval.Start))
             continue;
         if (exact.Any())
         {
@@ -521,11 +557,12 @@ api.MapPost("/appointments", async (AppointmentRequest request, HttpContext cont
         a.StartDate < slot.EndDate && a.EndDate > slot.StartDate, cancellation))
         return SlotUnavailable();
 
-    var date = slot.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var date = Scheduling.DateKey(slot.StartDate);
+    var nearbyDates = Scheduling.OverlappingDates(slot.StartDate, slot.EndDate).Select(Scheduling.DateKey).ToArray();
     var overlaps = await db.Appointments.AnyAsync(a => a.StartUtc < interval.End && a.EndUtc > interval.Start, cancellation);
-    var legacy = await db.Appointments.Where(a => a.StartUtc == null && a.Date == date)
+    var legacy = await db.Appointments.Where(a => a.StartUtc == null && nearbyDates.Contains(a.Date))
         .Select(a => new { a.Date, a.Time }).ToListAsync(cancellation);
-    if (overlaps || legacy.Any(a => Scheduling.OverlapsLegacy(a.Time, slot.StartDate, slot.EndDate)))
+    if (overlaps || legacy.Any(a => Scheduling.OverlapsLegacy(a.Date, a.Time, slot.StartDate, slot.EndDate)))
         return SlotUnavailable();
 
     var appointment = new Appointment

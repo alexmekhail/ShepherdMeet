@@ -5,6 +5,7 @@ import datetime as dt
 import http.cookiejar
 import json
 import os
+import subprocess
 import threading
 import unittest
 import urllib.error
@@ -64,6 +65,87 @@ class SchedulingTests(unittest.TestCase):
         status, slots = self.visitor.request("GET", "/priestavailabilities")
         self.assertEqual(status, 200)
         return next(item for item in slots if (item["startDate"], item["startTime"]) == (date.isoformat(), start))
+
+    def db_sql(self, statement):
+        return subprocess.check_output(
+            ["psql", "-X", "--no-password", "-qAt", "-v", "ON_ERROR_STOP=1", "-c", statement],
+            text=True,
+        ).strip()
+
+    @unittest.skipUnless(os.environ.get("PGDATABASE"), "Set PGDATABASE for disposable PostgreSQL fixtures")
+    def test_previous_day_legacy_booking_blocks_midnight_only(self):
+        day = self.date + dt.timedelta(days=(-self.date.weekday()) % 7)
+        previous_day = day - dt.timedelta(days=1)
+        appointment_id = int(self.db_sql(f'''
+            INSERT INTO "Appointments" ("UserID", "Name", "Date", "Time", "Location", "CreatedAt")
+            VALUES (0, 'Legacy fixture', '{previous_day}', '11:45 - 12:15', 'Test', NOW())
+            RETURNING "ID"
+        '''))
+        self.addCleanup(self.db_sql, f'DELETE FROM "Appointments" WHERE "ID" = {appointment_id}')
+        opening = self.availability("00:00:00", "01:00:00", date=day)
+        self.assertEqual(self.admin.request("POST", "/priestavailabilities", opening)[0], 204)
+        midnight = self.slot(day, "00:00")
+        self.assertTrue(midnight["isBooked"])
+        self.assertFalse(self.slot(day, "00:30")["isBooked"])
+        self.assertEqual(self.parishioner.request("POST", "/appointments", {"availabilityId": midnight["id"]})[0], 409)
+
+    @unittest.skipUnless(os.environ.get("PGDATABASE"), "Set PGDATABASE for disposable PostgreSQL fixtures")
+    def test_off_grid_slot_cannot_overlap_a_next_day_legacy_booking(self):
+        day = self.date + dt.timedelta(days=(-self.date.weekday()) % 7 + 2)
+        next_day = day + dt.timedelta(days=1)
+        slot_id = int(self.db_sql(f'''
+            INSERT INTO "PriestAvailabilities"
+                ("UserID", "StartDate", "EndDate", "Days", "StartTime", "EndTime", "IsAvailable")
+            VALUES (0, '{day} 23:45', '{next_day} 00:15', ARRAY['{day:%A}'], '23:45', '00:15', TRUE)
+            RETURNING "ID"
+        '''))
+        self.addCleanup(self.db_sql, f'DELETE FROM "PriestAvailabilities" WHERE "ID" = {slot_id}')
+        appointment_id = int(self.db_sql(f'''
+            INSERT INTO "Appointments" ("UserID", "Name", "Date", "Time", "Location", "CreatedAt")
+            VALUES (0, 'Legacy fixture', '{next_day}', '12:00 AM - 12:30 AM', 'Test', NOW())
+            RETURNING "ID"
+        '''))
+        self.addCleanup(self.db_sql, f'DELETE FROM "Appointments" WHERE "ID" = {appointment_id}')
+        self.assertTrue(self.slot(day, "23:45")["isBooked"])
+        self.assertEqual(self.parishioner.request("POST", "/appointments", {"availabilityId": slot_id})[0], 409)
+
+    @unittest.skipUnless(os.environ.get("PGDATABASE"), "Set PGDATABASE for disposable PostgreSQL fixtures")
+    def test_opening_replaces_only_fully_covered_off_grid_legacy_block(self):
+        block_id = int(self.db_sql(f'''
+            INSERT INTO "PriestAvailabilities"
+                ("UserID", "StartDate", "EndDate", "Days", "StartTime", "EndTime", "IsAvailable")
+            VALUES (0, '{self.date} 10:15', '{self.date} 10:45', ARRAY['{self.date:%A}'], '10:15', '10:45', FALSE)
+            RETURNING "ID"
+        '''))
+        self.addCleanup(self.db_sql, f'DELETE FROM "PriestAvailabilities" WHERE "ID" = {block_id}')
+
+        partial = self.availability("10:00:00", "10:30:00")
+        status, problem = self.admin.request("POST", "/priestavailabilities", partial)
+        self.assertEqual(status, 409)
+        self.assertIn("covers the whole block", problem["detail"])
+        self.assertFalse(self.slot(self.date, "10:15")["isAvailable"])
+
+        full = self.availability("10:00:00", "11:00:00")
+        appointment_id = int(self.db_sql(f'''
+            INSERT INTO "Appointments"
+                ("UserID", "Name", "Date", "Time", "Location", "CreatedAt", "AvailabilityID", "StartUtc", "EndUtc")
+            SELECT 0, 'Linked fixture', '{self.date}', '10:15 AM - 10:45 AM', 'Test', NOW(), "ID",
+                "StartDate" AT TIME ZONE 'America/Los_Angeles', "EndDate" AT TIME ZONE 'America/Los_Angeles'
+            FROM "PriestAvailabilities" WHERE "ID" = {block_id}
+            RETURNING "ID"
+        '''))
+        remove_appointment = f'DELETE FROM "Appointments" WHERE "ID" = {appointment_id}'
+        self.addCleanup(self.db_sql, remove_appointment)
+        status, problem = self.admin.request("POST", "/priestavailabilities", full)
+        self.assertEqual(status, 409)
+        self.assertIn("linked to an appointment", problem["detail"])
+        self.assertFalse(self.slot(self.date, "10:15")["isAvailable"])
+
+        self.db_sql(remove_appointment)
+        self.assertEqual(self.admin.request("POST", "/priestavailabilities", full)[0], 204)
+        self.assertTrue(self.slot(self.date, "10:00")["isAvailable"])
+        self.assertTrue(self.slot(self.date, "10:30")["isAvailable"])
+        self.assertEqual(self.db_sql(f'SELECT COUNT(*) FROM "PriestAvailabilities" WHERE "ID" = {block_id}'), "0")
 
     def test_concurrent_booking_ownership_cancellation_and_rebooking(self):
         self.assertEqual(self.admin.request("POST", "/priestavailabilities", self.availability())[0], 204)

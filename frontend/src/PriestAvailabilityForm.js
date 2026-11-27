@@ -32,12 +32,13 @@ export default function PriestAvailabilityForm({ profile }) {
     }
     setPending(true);
     try {
+      const endTime = form.get('endTime');
       await api('/priestavailabilities', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           startDate: date, endDate: repeat ? form.get('endDate') : date, days,
           startTime: mode === 'day-off' ? '00:00:00' : form.get('startTime') + ':00',
-          endTime: mode === 'day-off' ? '1.00:00:00' : form.get('endTime') + ':00',
+          endTime: mode === 'day-off' || endTime === '00:00' ? '1.00:00:00' : endTime + ':00',
           isAvailable: mode === 'open',
         }),
       });
