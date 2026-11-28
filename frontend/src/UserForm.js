@@ -35,14 +35,15 @@ export default function UserForm({ profile }) {
   const daySlots = (slots || []).filter((slot) => slot.startDate === day);
 
   return <>
-    <header className="page-heading"><div><h1>Book a meeting</h1><p>Choose a date and time for a 30-minute appointment.</p></div></header>
-    <p className="priest-line"><strong>Father Danial</strong><span>{CHURCH}</span></p>
-    <div className="booking-layout">
-      <section className="panel">
+    <header className="page-heading"><div><h1>Book a meeting</h1><p>30 minutes with Father Danial</p></div></header>
+    <div className="booking-layout panel">
+      <section className="booking-calendar" aria-label="Choose a date">
         <div className="calendar-toolbar">
           <h2 aria-live="polite">{dateLabel(monthKey + '-01', { month: 'long', year: 'numeric' })}</h2>
-          <div><button className="secondary" aria-label="Previous month" onClick={() => changeMonth(-1)}>‹</button>
-            <button className="secondary" aria-label="Next month" onClick={() => changeMonth(1)}>›</button></div>
+          <div>
+            <button className="month-button" aria-label="Previous month" onClick={() => changeMonth(-1)}><span aria-hidden="true" /></button>
+            <button className="month-button next" aria-label="Next month" onClick={() => changeMonth(1)}><span aria-hidden="true" /></button>
+          </div>
         </div>
         {error && <p className="error" role="alert">{error} <button className="secondary" onClick={() => load()}>Retry</button></p>}
         {!slots && !error && <p role="status">Loading availability…</p>}
@@ -57,10 +58,10 @@ export default function UserForm({ profile }) {
               onClick={() => { setDay(date); setSelected(null); }}>{i + 1}</button>;
           })}
         </div>}
+        <p className="booking-location muted">{CHURCH}</p>
       </section>
-      <section className="panel">
-        <h2>Appointment times</h2>
-        <p className="muted">{profile.timeZone}</p>
+      <section className="booking-times" aria-labelledby="booking-times-heading">
+        <h2 id="booking-times-heading">Appointment times</h2>
         {!day && <p className="muted">Choose a date on the calendar.</p>}
         {day && <p><strong>{dateLabel(day)}</strong></p>}
         {day && !daySlots.length && <p className="muted">No times are listed for this date.</p>}

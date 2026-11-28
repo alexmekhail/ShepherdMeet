@@ -1,12 +1,10 @@
 # ShepherdMeet design
 
-ShepherdMeet's workspace uses a navy canvas, slate panels, indigo actions, and a
-parish cross mark. The dark theme is shared by sign-in, appointments, booking,
-and schedule management. Appointment times are tabular. Green indicates an
-open calendar date, indigo marks selection, and slot text names booked and
-unavailable states.
+ShepherdMeet uses a soft white canvas, a blue accent, and the church logo.
+Dark mode uses the same hierarchy on near-black and charcoal surfaces. The
+theme button follows system appearance by default and remembers a manual choice.
 
-The desktop sidebar holds persistent navigation and account controls. At phone
-widths it becomes a wrapping header. The booking view puts the calendar and
-time choices side by side where space allows and stacks them on smaller screens.
-Native buttons and form controls provide keyboard access and visible focus.
+A compact header keeps navigation and account controls together. Booking uses a
+single surface for the calendar and time choices, with the two sections stacked
+on phones. Soft blue identifies dates with openings, filled blue marks the chosen
+date, and text labels identify booked and unavailable times.

@@ -1,26 +1,27 @@
 .login-container {
-  width: min(29rem, calc(100% - 2rem));
-  margin: clamp(2rem, 10vh, 6rem) auto;
-  padding: clamp(1.25rem, 5vw, 2.5rem);
+  width: min(100%, 25rem);
+  margin: 1.5rem auto;
+  padding: 1.75rem;
   display: grid;
-  gap: 1rem;
+  gap: .9rem;
   text-align: center;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 1rem;
+  border-radius: .75rem;
 }
-.login-container .logo { width: 6rem; height: auto; margin-inline: auto; }
+.login-container .logo { width: 4rem; height: auto; margin-inline: auto; }
 .gsi-material-button, .demo-button {
   width: 100%;
   min-height: 44px;
   padding: .65rem;
-  border-radius: .6rem;
-  border: 1px solid var(--border-color);
-  font-weight: 650;
+  border-radius: .45rem;
+  border: 1px solid var(--control-border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-weight: 620;
 }
-.gsi-material-button { background: var(--text-primary); color: var(--accent-ink); }
+.gsi-material-button:hover, .demo-button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-surface); }
+.demo-button:disabled { border-color: var(--border-color); color: var(--text-secondary); }
 .gsi-material-button-content-wrapper { display: flex; align-items: center; justify-content: center; gap: .65rem; }
-.demo-section { display: grid; gap: .6rem; }
-.demo-divider { color: var(--text-secondary); }
-.demo-button { background: var(--bg-input); color: var(--text-primary); }
-.demo-button:hover { border-color: var(--accent); }
+.demo-section { display: grid; gap: .5rem; }
+.demo-divider { color: var(--text-secondary); font-size: .875rem; }

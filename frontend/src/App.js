@@ -5,7 +5,7 @@ import UserForm from './UserForm';
 import ConfirmationPage from './ConfirmationPage';
 import AppointmentConfirmed from './AppointmentConfirmed';
 import Login from './login';
-import Sidebar from './Sidebar';
+import WorkspaceHeader from './WorkspaceHeader';
 import Dashboard from './Dashboard';
 import './theme.css';
 
@@ -76,39 +76,24 @@ const App = () => {
     navigate('/', { replace: true });
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '20%', fontSize: '1.2rem' }}>
-        Loading...
-        {waking && (
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: 360, textAlign: 'center' }}>
-            Waking up the server — this runs on free hosting that falls asleep
-            after inactivity, so first load can take about a minute.
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Login onAuthenticated={handleAuthenticated} />;
-  }
-
   const isAdmin = profile?.isAdmin === true;
 
   return (
     <div className="workspace">
       <a className="skip-link" href="#main-content">Skip to content</a>
-      <Sidebar profile={profile} onSignOut={handleSignOut} />
-      <main id="main-content" className="workspace-main">
-        <Routes>
+      <WorkspaceHeader profile={isAuthenticated ? profile : null} onSignOut={handleSignOut} />
+      <main id="main-content" className="workspace-main" tabIndex={-1}>
+        {loading ? <div className="loading-view" role="status">
+          <p>Loading ShepherdMeet…</p>
+          {waking && <p className="muted">The server is waking up. This can take up to a minute.</p>}
+        </div> : !isAuthenticated ? <Login onAuthenticated={handleAuthenticated} /> : <Routes>
           <Route path="/" element={<Dashboard profile={profile} />} />
           <Route path="/availability" element={isAdmin ? <PriestAvailabilityForm profile={profile} /> : <Navigate to="/" replace />} />
           <Route path="/book" element={isAdmin ? <Navigate to="/" replace /> : <UserForm profile={profile} />} />
           <Route path="/confirmation" element={isAdmin ? <Navigate to="/" replace /> : <ConfirmationPage profile={profile} />} />
           <Route path="/confirmed" element={<AppointmentConfirmed />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        </Routes>}
       </main>
     </div>
   );

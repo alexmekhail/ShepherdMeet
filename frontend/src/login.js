@@ -46,9 +46,9 @@ const Login = ({ onAuthenticated }) => {
   };
 
   return (
-    <main className="login-container">
+    <section className="login-container" aria-labelledby="sign-in-heading">
       <img src={logo} alt="St. Philopater and St. Demiana Church" className="logo" />
-      <h1>ShepherdMeet</h1>
+      <h1 id="sign-in-heading">Sign in</h1>
       <p className="muted">Schedule a meeting with your parish priest.</p>
       {error && <p className="error" role="alert">{error}</p>}
 
@@ -93,7 +93,7 @@ const Login = ({ onAuthenticated }) => {
           {demoLoading === 'admin' ? 'Signing in…' : 'Demo as Priest (Admin)'}
         </button>
       </div>}
-    </main>
+    </section>
   );
 };
 
