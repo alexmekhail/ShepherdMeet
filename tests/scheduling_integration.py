@@ -185,6 +185,33 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(other.request("DELETE", f"/appointments/{rebooked['id']}")[0], 204)
         self.assertEqual(owner.request("POST", "/appointments", payload)[0], 409)
 
+    @unittest.skipUnless(os.environ.get("PGDATABASE"), "Set PGDATABASE for disposable PostgreSQL fixtures")
+    def test_duplicate_account_email_rejects_appointment_writes(self):
+        day = self.date + dt.timedelta(days=28)
+        opening = self.availability("16:00:00", "17:00:00", date=day)
+        self.assertEqual(self.admin.request("POST", "/priestavailabilities", opening)[0], 204)
+        booked = self.slot(day, "16:00")
+        unbooked = self.slot(day, "16:30")
+        status, appointment = self.parishioner.request("POST", "/appointments", {"availabilityId": booked["id"]})
+        self.assertEqual(status, 201)
+        appointment_id = appointment["id"]
+        self.addCleanup(self.db_sql, f'DELETE FROM "Appointments" WHERE "ID" = {appointment_id}')
+
+        status, profile = self.parishioner.request("GET", "/profile")
+        self.assertEqual(status, 200)
+        user_id = profile["id"]
+        duplicate_id = int(self.db_sql(f'''
+            INSERT INTO "Users" ("Email")
+            SELECT "Email" FROM "Users" WHERE "ID" = {user_id}
+            RETURNING "ID"
+        '''))
+        self.addCleanup(self.db_sql, f'DELETE FROM "Users" WHERE "ID" = {duplicate_id}')
+
+        self.assertEqual(self.parishioner.request("POST", "/appointments", {"availabilityId": unbooked["id"]})[0], 401)
+        self.assertEqual(self.parishioner.request("DELETE", f"/appointments/{appointment_id}")[0], 401)
+        self.assertTrue(self.slot(day, "16:00")["isBooked"])
+        self.assertFalse(self.slot(day, "16:30")["isBooked"])
+
     def test_weekly_expansion_and_date_override(self):
         last = self.date + dt.timedelta(days=14)
         weekly = self.availability("19:00:00", "20:00:00", last=last)

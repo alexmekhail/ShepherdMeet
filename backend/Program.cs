@@ -608,12 +608,13 @@ api.MapDelete("/appointments/{id:int}", async (int id, HttpContext context, AppD
 static IResult SlotUnavailable() =>
     Results.Problem("This time is no longer available. Choose another time from the calendar.", statusCode: 409);
 
-static Task<User?> CurrentUser(HttpContext context, AppDbContext db, CancellationToken cancellation)
+static async Task<User?> CurrentUser(HttpContext context, AppDbContext db, CancellationToken cancellation)
 {
     var email = context.User.FindFirstValue(ClaimTypes.Email);
-    return !string.IsNullOrWhiteSpace(email) && context.User.Identity?.IsAuthenticated == true
-        ? db.Users.FirstOrDefaultAsync(u => u.Email == email, cancellation)
-        : Task.FromResult<User?>(null);
+    if (string.IsNullOrWhiteSpace(email) || context.User.Identity?.IsAuthenticated != true) return null;
+
+    var matches = await db.Users.Where(u => u.Email == email).Take(2).ToListAsync(cancellation);
+    return matches.Count == 1 ? matches[0] : null;
 }
 
 static IResult AdminRequired(HttpContext context) => context.User.Identity?.IsAuthenticated == true
