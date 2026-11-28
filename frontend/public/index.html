@@ -3,9 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#f5f7fa" />
     <meta name="description" content="ShepherdMeet - Schedule a meeting" />
     <title>ShepherdMeet</title>
+    <script>
+      (function () {
+        var root = document.documentElement;
+        var preference;
+        try { preference = localStorage.getItem('shepherdmeet-theme'); } catch (error) {}
+        if (preference === 'light' || preference === 'dark') {
+          root.dataset.themePreference = preference;
+          root.dataset.theme = preference;
+        } else {
+          var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          root.dataset.theme = dark ? 'dark' : 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

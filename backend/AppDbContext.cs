@@ -18,6 +18,16 @@ public class AppDbContext : DbContext, IDataProtectionKeyContext
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        var appointments = modelBuilder.Entity<Appointment>();
+        appointments.Property(a => a.StartUtc).HasColumnType("timestamp with time zone");
+        appointments.Property(a => a.EndUtc).HasColumnType("timestamp with time zone");
+        appointments.HasIndex(a => a.AvailabilityID).IsUnique();
+        appointments.HasOne<PriestAvailabilityInput>().WithMany().HasForeignKey(a => a.AvailabilityID)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         // These DateTimes are church wall-clock times with no real timezone

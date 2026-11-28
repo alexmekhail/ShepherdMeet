@@ -10,6 +10,10 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      ASPNETCORE_ENVIRONMENT: Development
+      PORT: 5209
+      TZ: UTC
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,6 +30,40 @@ jobs:
       - name: Build
         working-directory: ./backend
         run: dotnet build --no-restore --configuration Release
+
+      - name: Migrate and test the scheduling API
+        run: |
+          export POSTGRES_DB=shepherdmeet_test POSTGRES_USER=postgres
+          POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+          export POSTGRES_PASSWORD
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          pg_container="$(docker run --rm --detach --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_DB --env POSTGRES_USER --env POSTGRES_PASSWORD postgres:16-alpine)"
+          cleanup() {
+            if [[ -n "${api_pid:-}" ]]; then kill "$api_pid" || true; fi
+            if [[ -n "${api2_pid:-}" ]]; then kill "$api2_pid" || true; fi
+            docker stop "$pg_container" >/dev/null || true
+          }
+          trap cleanup EXIT
+          export PGHOST=127.0.0.1 PGPORT=5432 PGUSER="$POSTGRES_USER" PGDATABASE="$POSTGRES_DB"
+          export PGPASSWORD="$POSTGRES_PASSWORD"
+          for attempt in {1..30}; do
+            if psql --no-password --tuples-only --command 'SELECT 1' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          psql --no-password --tuples-only --command 'SELECT 1' >/dev/null
+          export ConnectionStrings__DefaultConnection="Host=$PGHOST;Port=$PGPORT;Database=$PGDATABASE;Username=$PGUSER;Password=$PGPASSWORD"
+
+          dotnet backend/bin/Release/net8.0/ShepherdMeet.dll --migrate
+          dotnet backend/bin/Release/net8.0/ShepherdMeet.dll > /tmp/shepherdmeet-api.log 2>&1 &
+          api_pid=$!
+          PORT=5210 dotnet backend/bin/Release/net8.0/ShepherdMeet.dll > /tmp/shepherdmeet-api2.log 2>&1 &
+          api2_pid=$!
+          for port in 5209 5210; do
+            curl --silent --show-error --fail --retry 15 --retry-connrefused --retry-delay 1 "http://localhost:$port/api/health"
+          done
+          SHEPHERDMEET_SECOND_TEST_URL=http://localhost:5210/api python3 tests/scheduling_integration.py
+          psql --no-password -f tests/appointment_constraints.sql
 
   frontend:
     runs-on: ubuntu-latest
@@ -46,7 +84,7 @@ jobs:
 
       - name: Run tests
         working-directory: ./frontend
-        run: npm test -- --watchAll=false --passWithNoTests
+        run: npm test -- --watchAll=false --runInBand
 
       - name: Build
         working-directory: ./frontend
